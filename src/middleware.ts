@@ -27,17 +27,19 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // IMPORTANT: Avoid writing any logic between createServerClient and
-  // supabase.auth.getUser(). A simple mistake could make it very hard to debug
-  // issues with users being randomly logged out.
-
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Add user info to headers for easy access in Server Components
-  if (user) {
-    supabaseResponse.headers.set('x-user-id', user.id)
+  const { pathname } = request.nextUrl
+
+  // PERLINDUNGAN RUTE DASAR
+  // Jika pengguna belum login dan mencoba mengakses rute yang dilindungi (`/admin` atau `/tenant`),
+  // arahkan mereka ke halaman login.
+  if (!user && (pathname.startsWith('/admin') || pathname.startsWith('/tenant'))) {
+    const url = new URL('/login', request.url)
+    url.searchParams.set('redirectedFrom', pathname)
+    return NextResponse.redirect(url)
   }
 
   return supabaseResponse
