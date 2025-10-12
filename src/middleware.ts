@@ -32,6 +32,10 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   const { pathname } = request.nextUrl
+    if (user && pathname.startsWith('/login')) {
+    const url = new URL('/admin', request.url)
+    return NextResponse.redirect(url)
+  }
 
   // PERLINDUNGAN RUTE DASAR
   // Jika pengguna belum login dan mencoba mengakses rute yang dilindungi (`/admin` atau `/tenant`),
@@ -54,6 +58,10 @@ export const config = {
      * - favicon.ico (favicon file)
      * Feel free to modify this pattern to include more paths.
      */
+    '/login',
+    '/admin/:path*',
+    '/tenant/:path*',
+    '/',
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
