@@ -84,7 +84,7 @@ export function TenantTable({ tenants, onEdit, onRefresh }: TenantTableProps) {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Terdaftar
               </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="sticky right-0 px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.1)]">
                 Aksi
               </th>
             </tr>
@@ -108,7 +108,7 @@ export function TenantTable({ tenants, onEdit, onRefresh }: TenantTableProps) {
                   {tenant.tenant_name}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
                     Aktif
                   </span>
                 </td>
@@ -118,7 +118,7 @@ export function TenantTable({ tenants, onEdit, onRefresh }: TenantTableProps) {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {formatDate(tenant.created_at)}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                <td className="sticky right-0 px-6 py-4 whitespace-nowrap text-right text-sm font-medium bg-white shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.1)]">
                   <div className="flex justify-end gap-2">
                     <Button
                       variant="outline"
