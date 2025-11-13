@@ -292,13 +292,13 @@ export default function QRScannerPage() {
           >
             {isImageProcessing ? (
               <>
-                <Loader color="text-amber-800" />{" "}
+                <Loader  />{" "}
                 {/* Menambahkan prop color ke Loader jika Anda ingin mengubah warna spin-nya */}
                 <p className="mt-4 font-semibold text-lg">{data}</p>
               </>
             ) : (
               <p className="font-medium text-lg text-gray-500">
-                <CameraIcon color="text-gray-500" /> Kamera menunggu aktivasi.
+                <CameraIcon  /> Kamera menunggu aktivasi.
               </p>
             )}
           </div>
