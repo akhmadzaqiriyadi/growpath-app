@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getAllTransactions, getTenantsList } from '@/lib/actions/transactions';
+import { getAllTransactions, getTenantsList, getTransactionsStats } from '@/lib/actions/transactions'; // Pastikan path ini benar
 import { Database } from '@/types/database.types';
 import {
   ArrowUpRight,
@@ -11,12 +11,12 @@ import {
   Eye,
   Calendar,
   DollarSign,
-  TrendingUp,
   Users,
-} from 'lucide-react';
+} from 'lucide-react'; // Hapus TrendingUp jika tidak dipakai
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 
+// --- (Tipe tidak berubah) ---
 type Transaction = Database['public']['Tables']['transactions']['Row'] & {
   tenant: {
     id: string;
@@ -33,20 +33,30 @@ type Tenant = {
   email: string;
 };
 
+// --- KOMPONEN UTAMA ---
 export function AdminTransactionsClient() {
+  // --- State Data & Loading ---
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // Untuk loading tabel transaksi
+  const [loadingTenants, setLoadingTenants] = useState(true); // Untuk loading dropdown tenant
+  const [loadingStats, setLoadingStats] = useState(true);
 
-  // Filters
+  // --- State Paginasi ---
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10); // Kamu bisa sesuaikan ini
+  const [totalItemsCount, setTotalItemsCount] = useState(0); // BARU: Total data dari server
+
+  // --- State Filters ---
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTenant, setSelectedTenant] = useState<string>('all');
-  const [selectedType, setSelectedType] = useState<'all' | 'PEMASUKAN' | 'PENGELUARAN'>('all');
+  const [selectedType, setSelectedType] = useState<'all' | 'PEMASUKAN' | 'PENGELUARAN'>(
+    'all'
+  );
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
-  // Stats
+  // --- State Stats (⚠️ DATANYA TIDAK AKURAT SETELAH PERUBAHAN INI) ---
   const [stats, setStats] = useState({
     totalTransactions: 0,
     totalIncome: 0,
@@ -54,85 +64,160 @@ export function AdminTransactionsClient() {
     activeTenants: 0,
   });
 
+  // --- EFEK 1: Ambil data tenant (hanya sekali saat komponen dimuat) ---
   useEffect(() => {
-    loadData();
-  }, []);
+    const loadTenants = async () => {
+      setLoadingTenants(true);
+      const tenantsResult = await getTenantsList();
+      if (tenantsResult.data) {
+        setTenants(tenantsResult.data);
+      }
+      setLoadingTenants(false);
+    };
+    loadTenants();
+  }, []); // <-- Dependency array kosong, hanya jalan sekali
 
+  // --- EFEK 2: Ambil data transaksi (setiap kali filter atau halaman berubah) ---
   useEffect(() => {
-    applyFilters();
-  }, [transactions, searchQuery, selectedTenant, selectedType, dateFrom, dateTo]);
+    const loadTransactions = async () => {
+      setLoading(true);
 
-  const loadData = async () => {
-    setLoading(true);
+      // Siapkan semua parameter untuk Server Action
+      const params = {
+        page: currentPage,
+        itemsPerPage: itemsPerPage,
+        searchQuery: searchQuery,
+        selectedTenant: selectedTenant,
+        selectedType: selectedType,
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+      };
 
-    const [transactionsResult, tenantsResult] = await Promise.all([
-      getAllTransactions(),
-      getTenantsList(),
-    ]);
+      // Panggil Server Action baru dengan semua parameter filter
+      const transactionsResult = await getAllTransactions(params);
 
-    if (transactionsResult.data) {
+      if (transactionsResult.data && transactionsResult.count != null) {
+        setTransactions(transactionsResult.data as Transaction[]);
+        setTotalItemsCount(transactionsResult.count); // Simpan total data
+
+        // ⚠️ PERINGATAN: Kalkulasi Stats di bawah ini TIDAK AKURAT
+        // Ini hanya menghitung stats dari 10 item yang tampil, BUKAN dari total data.
+        // Ini perlu dipindahkan ke Server Action terpisah nanti.
+        const totalIncome = transactionsResult.data
+          .filter((t: any) => t.type === 'PEMASUKAN')
+          .reduce((sum: number, t: any) => sum + t.total_amount, 0);
+        const totalExpense = transactionsResult.data
+          .filter((t: any) => t.type === 'PENGELUARAN')
+          .reduce((sum: number, t: any) => sum + t.total_amount, 0);
+        const uniqueTenants = new Set(
+          transactionsResult.data.map((t: any) => t.tenant_id)
+        );
+
+        setStats({
+          totalTransactions: transactionsResult.count, // Setidaknya ini akurat
+          totalIncome, // SALAH
+          totalExpense, // SALAH
+          activeTenants: uniqueTenants.size, // SALAH
+        });
+        // --- Akhir dari kode yang tidak akurat ---
+      } else {
+        // Jika error atau tidak ada data
+        setTransactions([]);
+        setTotalItemsCount(0);
+      }
+
+      setLoading(false);
+    };
+
+    loadTransactions();
+  }, [
+    currentPage,
+    itemsPerPage,
+    searchQuery,
+    selectedTenant,
+    selectedType,
+    dateFrom,
+    dateTo,
+  ]); // <-- EFEK INI JALAN JIKA SALAH SATU DARI INI BERUBAH
+
+  // EFEK 2: Ambil DATA STATS (setiap kali FILTER berubah)
+useEffect(() => {
+  const loadStats = async () => {
+    setLoadingStats(true); // Mulai loading stats
+
+    const filterParams = {
+      searchQuery: searchQuery,
+      selectedTenant: selectedTenant,
+      selectedType: selectedType,
+      dateFrom: dateFrom,
+      dateTo: dateTo,
+    };
+
+    // Panggil Server Action STATS yang baru
+    const statsResult = await getTransactionsStats(filterParams);
+
+    // Update state stats dengan data AKURAT dari server
+    setStats(statsResult);
+    setLoadingStats(false); // Selesai loading stats
+  };
+
+  loadStats();
+}, [searchQuery, selectedTenant, selectedType, dateFrom, dateTo]); // <-- HANYA bergantung pada filter
+
+// EFEK 3: Ambil DATA TABEL (setiap kali FILTER atau HALAMAN berubah)
+useEffect(() => {
+  const loadTransactions = async () => {
+    setLoading(true); // Mulai loading tabel
+
+    const params = {
+      page: currentPage,
+      itemsPerPage: itemsPerPage,
+      searchQuery: searchQuery,
+      selectedTenant: selectedTenant,
+      selectedType: selectedType,
+      dateFrom: dateFrom,
+      dateTo: dateTo,
+    };
+
+    // Panggil Server Action TABEL
+    const transactionsResult = await getAllTransactions(params);
+
+    if (transactionsResult.data && transactionsResult.count != null) {
       setTransactions(transactionsResult.data as Transaction[]);
-      
-      // Calculate stats
-      const totalIncome = transactionsResult.data
-        .filter((t: any) => t.type === 'PEMASUKAN')
-        .reduce((sum: number, t: any) => sum + t.total_amount, 0);
-      
-      const totalExpense = transactionsResult.data
-        .filter((t: any) => t.type === 'PENGELUARAN')
-        .reduce((sum: number, t: any) => sum + t.total_amount, 0);
+      // SINKRONISASI totalItemsCount dari data tabel
+      setTotalItemsCount(transactionsResult.count);
 
-      const uniqueTenants = new Set(transactionsResult.data.map((t: any) => t.tenant_id));
-
-      setStats({
-        totalTransactions: transactionsResult.data.length,
-        totalIncome,
-        totalExpense,
-        activeTenants: uniqueTenants.size,
-      });
+      // !!! HAPUS SEMUA LOGIKA KALKULASI STATS LAMA DARI SINI !!!
+      // setStats({ ... }) <--- HAPUS BLOK INI DARI SINI
+    } else {
+      setTransactions([]);
+      setTotalItemsCount(0);
     }
 
-    if (tenantsResult.data) {
-      setTenants(tenantsResult.data);
-    }
-
-    setLoading(false);
+    setLoading(false); // Selesai loading tabel
   };
 
-  const applyFilters = () => {
-    let filtered = [...transactions];
+  loadTransactions();
+}, [
+  currentPage,
+  itemsPerPage,
+  searchQuery,
+  selectedTenant,
+  selectedType,
+  dateFrom,
+  dateTo,
+]);
 
-    // Search by tenant name or email
-    if (searchQuery) {
-      filtered = filtered.filter(
-        t =>
-          t.tenant.tenant_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          t.tenant.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          t.tenant.email.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
+  // --- EFEK 3: Reset halaman ke 1 jika filter berubah ---
+  // Ini penting agar user tidak terjebak di halaman 5 saat hasil filternya hanya 1 halaman
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedTenant, selectedType, dateFrom, dateTo]); // <-- Hanya state filter
 
-    // Filter by tenant
-    if (selectedTenant !== 'all') {
-      filtered = filtered.filter(t => t.tenant_id === selectedTenant);
-    }
+  // --- HAPUS: useEffect(applyFilters, ...) & fungsi applyFilters() ---
+  // Logika ini sudah pindah ke server
 
-    // Filter by type
-    if (selectedType !== 'all') {
-      filtered = filtered.filter(t => t.type === selectedType);
-    }
-
-    // Filter by date range
-    if (dateFrom) {
-      filtered = filtered.filter(t => t.transaction_date >= dateFrom);
-    }
-    if (dateTo) {
-      filtered = filtered.filter(t => t.transaction_date <= dateTo);
-    }
-
-    setFilteredTransactions(filtered);
-  };
-
+  // --- (Fungsi helper format tidak berubah) ---
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
@@ -149,6 +234,7 @@ export function AdminTransactionsClient() {
     });
   };
 
+  // Fungsi clearFilters tetap, EFEK 3 akan otomatis menangani reset halaman
   const clearFilters = () => {
     setSearchQuery('');
     setSelectedTenant('all');
@@ -157,13 +243,35 @@ export function AdminTransactionsClient() {
     setDateTo('');
   };
 
-  if (loading) {
+  // --- HITUNG PAGINASI ---
+  // Logika ini sekarang menggunakan total data dari server
+  const totalPages = Math.ceil(totalItemsCount / itemsPerPage);
+
+  // --- HAPUS: const paginatedTransactions = ... ---
+  // Data di state `transactions` sudah terpaginasi oleh server
+
+  // Handler paginasi (tidak berubah)
+  const handleNextPage = () => {
+    setCurrentPage((prev) => Math.min(prev + 1, totalPages));
+  };
+
+  const handlePrevPage = () => {
+    setCurrentPage((prev) => Math.max(prev - 1, 1));
+  };
+
+  // --- RENDER ---
+
+  // Tampilkan skeleton loading besar hanya saat data tenant (dropdown) belum siap
+  if (loadingTenants) {
     return (
       <div className="p-6 space-y-6">
         <div className="h-10 bg-gray-200 rounded animate-pulse w-64"></div>
         <div className="grid grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-24 bg-gray-200 rounded-lg animate-pulse"></div>
+            <div
+              key={i}
+              className="h-24 bg-gray-200 rounded-lg animate-pulse"
+            ></div>
           ))}
         </div>
         <div className="h-96 bg-gray-200 rounded-lg animate-pulse"></div>
@@ -176,11 +284,14 @@ export function AdminTransactionsClient() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
-        <p className="text-gray-600 mt-1">Kelola dan monitor semua transaksi tenant</p>
+        <p className="text-gray-600 mt-1">
+          Kelola dan monitor semua transaksi tenant
+        </p>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards (⚠️ INGAT: TIDAK AKURAT!) */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {/* Card Total Transaksi */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-primary/10 rounded-lg">
@@ -188,53 +299,73 @@ export function AdminTransactionsClient() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Total Transaksi</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.totalTransactions}</p>
+              {loadingStats ? (
+                <div className="h-7 w-20 bg-gray-200 rounded animate-pulse mt-1"></div>
+              ) : (
+                <p className="text-2xl font-bold text-gray-900">
+                  {stats.totalTransactions}
+                </p>
+              )}
             </div>
           </div>
         </div>
-
+        {/* Card Total Pemasukan */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-green-100 rounded-lg">
               <ArrowUpRight className="h-6 w-6 text-green-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Total Pemasukan</p>
-              <p className="text-xl font-bold text-green-600">
-                {formatCurrency(stats.totalIncome)}
-              </p>
+              <p className="text-sm text-gray-600">Total Pemasukan (Halaman Ini)</p> {/* (Beri tanda) */}
+              {loadingStats ? (
+                <div className="h-7 w-28 bg-gray-200 rounded animate-pulse mt-1"></div>
+              ) : (
+                <p className="text-xl font-bold text-green-600">
+                  {formatCurrency(stats.totalIncome)}
+                </p>
+              )}
             </div>
           </div>
         </div>
-
+        {/* Card Total Pengeluaran */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-red-100 rounded-lg">
               <ArrowDownRight className="h-6 w-6 text-red-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Total Pengeluaran</p>
-              <p className="text-xl font-bold text-red-600">
-                {formatCurrency(stats.totalExpense)}
-              </p>
+              <p className="text-sm text-gray-600">Total Pengeluaran (Halaman Ini)</p> {/* (Beri tanda) */}
+              {loadingStats ? (
+                <div className="h-7 w-28 bg-gray-200 rounded animate-pulse mt-1"></div>
+              ) : (
+                <p className="text-xl font-bold text-red-600">
+                  {formatCurrency(stats.totalExpense)}
+                </p>
+              )}
             </div>
           </div>
         </div>
-
+        {/* Card Tenant Aktif */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-purple-100 rounded-lg">
               <Users className="h-6 w-6 text-purple-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Tenant Aktif</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.activeTenants}</p>
+              <p className="text-sm text-gray-600">Tenant Aktif (Halaman Ini)</p> {/* (Beri tanda) */}
+              {loadingStats ? (
+                <div className="h-7 w-16 bg-gray-200 rounded animate-pulse mt-1"></div>
+              ) : (
+                <p className="text-2xl font-bold text-gray-900">
+                  {stats.activeTenants}
+                </p>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Filters (Tidak ada perubahan di JSX filter) */}
       <div className="bg-white rounded-lg border border-gray-200 p-4">
         <div className="flex items-center gap-2 mb-4">
           <Filter className="h-5 w-5 text-gray-600" />
@@ -319,17 +450,25 @@ export function AdminTransactionsClient() {
         )}
       </div>
 
-      {/* Results Count */}
+      {/* Results Count (MODIFIKASI) */}
       <div className="flex justify-between items-center">
         <p className="text-sm text-gray-600">
-          Menampilkan <span className="font-semibold">{filteredTransactions.length}</span> dari{' '}
-          <span className="font-semibold">{transactions.length}</span> transaksi
+          Menampilkan <span className="font-semibold">{transactions.length}</span>{' '}
+          dari <span className="font-semibold">{totalItemsCount}</span> transaksi
         </p>
       </div>
 
-      {/* Transactions Table */}
+      {/* Transactions Table (MODIFIKASI) */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto relative"> {/* Tambah 'relative' untuk overlay loading */}
+          
+          {/* Overlay Loading */}
+          {loading && (
+            <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10">
+              <p>Memuat data...</p> {/* Ganti dengan spinner jika punya */}
+            </div>
+          )}
+          
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
@@ -354,14 +493,16 @@ export function AdminTransactionsClient() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredTransactions.length === 0 ? (
+              {/* Ganti filteredTransactions.length -> transactions.length */}
+              {transactions.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                    Tidak ada transaksi ditemukan
+                    {loading ? 'Memuat...' : 'Tidak ada transaksi ditemukan'}
                   </td>
                 </tr>
               ) : (
-                filteredTransactions.map((transaction) => (
+                // Ganti filteredTransactions.map -> transactions.map
+                transactions.map((transaction) => (
                   <tr key={transaction.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -424,6 +565,37 @@ export function AdminTransactionsClient() {
           </table>
         </div>
       </div>
+
+      {/* Pagination Controls (MODIFIKASI) */}
+      {/* Logika totalPages sekarang sudah benar */}
+      {totalPages > 1 && (
+        <div className="flex justify-between items-center pt-4">
+          <div>
+            <span className="text-sm text-gray-600">
+              Halaman <span className="font-semibold">{currentPage}</span> dari{' '}
+              <span className="font-semibold">{totalPages}</span>
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              onClick={handlePrevPage}
+              disabled={currentPage === 1 || loading} // Tambah disable saat loading
+              variant="outline"
+              size="sm"
+            >
+              Previous
+            </Button>
+            <Button
+              onClick={handleNextPage}
+              disabled={currentPage === totalPages || loading} // Tambah disable saat loading
+              variant="outline"
+              size="sm"
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
