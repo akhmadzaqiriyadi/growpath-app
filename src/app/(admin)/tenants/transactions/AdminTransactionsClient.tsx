@@ -1,7 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getAllTransactions, getTenantsList, getTransactionsStats } from '@/lib/actions/transactions'; // Pastikan path ini benar
+import {
+  getAllTransactions,
+  getTenantsList,
+  getTransactionsStats,
+} from '@/lib/actions/transactions'; // Pastikan path ini benar
 import { Database } from '@/types/database.types';
 import {
   ArrowUpRight,
@@ -12,7 +16,7 @@ import {
   Calendar,
   DollarSign,
   Users,
-} from 'lucide-react'; // Hapus TrendingUp jika tidak dipakai
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 
@@ -45,18 +49,19 @@ export function AdminTransactionsClient() {
   // --- State Paginasi ---
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10); // Kamu bisa sesuaikan ini
-  const [totalItemsCount, setTotalItemsCount] = useState(0); // BARU: Total data dari server
+  const [totalItemsCount, setTotalItemsCount] = useState(0); // Total data dari server
 
   // --- State Filters ---
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchTenantQuery, setSearchTenantQuery] = useState(''); // Pencarian Tenant
+  const [searchNoteQuery, setSearchNoteQuery] = useState(''); // Pencarian Catatan
   const [selectedTenant, setSelectedTenant] = useState<string>('all');
-  const [selectedType, setSelectedType] = useState<'all' | 'PEMASUKAN' | 'PENGELUARAN'>(
-    'all'
-  );
+  const [selectedType, setSelectedType] = useState<
+    'all' | 'PEMASUKAN' | 'PENGELUARAN'
+  >('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
-  // --- State Stats (⚠️ DATANYA TIDAK AKURAT SETELAH PERUBAHAN INI) ---
+  // --- State Stats (Diisi dari server) ---
   const [stats, setStats] = useState({
     totalTransactions: 0,
     totalIncome: 0,
@@ -77,51 +82,57 @@ export function AdminTransactionsClient() {
     loadTenants();
   }, []); // <-- Dependency array kosong, hanya jalan sekali
 
-  // --- EFEK 2: Ambil data transaksi (setiap kali filter atau halaman berubah) ---
+  // --- EFEK 2: Ambil DATA STATS (setiap kali FILTER berubah) ---
   useEffect(() => {
-    const loadTransactions = async () => {
-      setLoading(true);
+    const loadStats = async () => {
+      setLoadingStats(true);
 
-      // Siapkan semua parameter untuk Server Action
-      const params = {
-        page: currentPage,
-        itemsPerPage: itemsPerPage,
-        searchQuery: searchQuery,
+      const filterParams = {
+        searchTenantQuery: searchTenantQuery,
+        searchNoteQuery: searchNoteQuery,
         selectedTenant: selectedTenant,
         selectedType: selectedType,
         dateFrom: dateFrom,
         dateTo: dateTo,
       };
 
-      // Panggil Server Action baru dengan semua parameter filter
+      const statsResult = await getTransactionsStats(filterParams);
+      setStats(statsResult);
+      setLoadingStats(false);
+    };
+
+    loadStats();
+  }, [
+    searchTenantQuery,
+    searchNoteQuery,
+    selectedTenant,
+    selectedType,
+    dateFrom,
+    dateTo,
+  ]); // <-- HANYA bergantung pada filter
+
+  // --- EFEK 3: Ambil DATA TABEL (setiap kali FILTER atau HALAMAN berubah) ---
+  useEffect(() => {
+    const loadTransactions = async () => {
+      setLoading(true);
+
+      const params = {
+        page: currentPage,
+        itemsPerPage: itemsPerPage,
+        searchTenantQuery: searchTenantQuery,
+        searchNoteQuery: searchNoteQuery,
+        selectedTenant: selectedTenant,
+        selectedType: selectedType,
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+      };
+
       const transactionsResult = await getAllTransactions(params);
 
       if (transactionsResult.data && transactionsResult.count != null) {
         setTransactions(transactionsResult.data as Transaction[]);
-        setTotalItemsCount(transactionsResult.count); // Simpan total data
-
-        // ⚠️ PERINGATAN: Kalkulasi Stats di bawah ini TIDAK AKURAT
-        // Ini hanya menghitung stats dari 10 item yang tampil, BUKAN dari total data.
-        // Ini perlu dipindahkan ke Server Action terpisah nanti.
-        const totalIncome = transactionsResult.data
-          .filter((t: any) => t.type === 'PEMASUKAN')
-          .reduce((sum: number, t: any) => sum + t.total_amount, 0);
-        const totalExpense = transactionsResult.data
-          .filter((t: any) => t.type === 'PENGELUARAN')
-          .reduce((sum: number, t: any) => sum + t.total_amount, 0);
-        const uniqueTenants = new Set(
-          transactionsResult.data.map((t: any) => t.tenant_id)
-        );
-
-        setStats({
-          totalTransactions: transactionsResult.count, // Setidaknya ini akurat
-          totalIncome, // SALAH
-          totalExpense, // SALAH
-          activeTenants: uniqueTenants.size, // SALAH
-        });
-        // --- Akhir dari kode yang tidak akurat ---
+        setTotalItemsCount(transactionsResult.count);
       } else {
-        // Jika error atau tidak ada data
         setTransactions([]);
         setTotalItemsCount(0);
       }
@@ -133,89 +144,25 @@ export function AdminTransactionsClient() {
   }, [
     currentPage,
     itemsPerPage,
-    searchQuery,
+    searchTenantQuery,
+    searchNoteQuery,
     selectedTenant,
     selectedType,
     dateFrom,
     dateTo,
-  ]); // <-- EFEK INI JALAN JIKA SALAH SATU DARI INI BERUBAH
+  ]); // <-- Bergantung pada filter DAN halaman
 
-  // EFEK 2: Ambil DATA STATS (setiap kali FILTER berubah)
-useEffect(() => {
-  const loadStats = async () => {
-    setLoadingStats(true); // Mulai loading stats
-
-    const filterParams = {
-      searchQuery: searchQuery,
-      selectedTenant: selectedTenant,
-      selectedType: selectedType,
-      dateFrom: dateFrom,
-      dateTo: dateTo,
-    };
-
-    // Panggil Server Action STATS yang baru
-    const statsResult = await getTransactionsStats(filterParams);
-
-    // Update state stats dengan data AKURAT dari server
-    setStats(statsResult);
-    setLoadingStats(false); // Selesai loading stats
-  };
-
-  loadStats();
-}, [searchQuery, selectedTenant, selectedType, dateFrom, dateTo]); // <-- HANYA bergantung pada filter
-
-// EFEK 3: Ambil DATA TABEL (setiap kali FILTER atau HALAMAN berubah)
-useEffect(() => {
-  const loadTransactions = async () => {
-    setLoading(true); // Mulai loading tabel
-
-    const params = {
-      page: currentPage,
-      itemsPerPage: itemsPerPage,
-      searchQuery: searchQuery,
-      selectedTenant: selectedTenant,
-      selectedType: selectedType,
-      dateFrom: dateFrom,
-      dateTo: dateTo,
-    };
-
-    // Panggil Server Action TABEL
-    const transactionsResult = await getAllTransactions(params);
-
-    if (transactionsResult.data && transactionsResult.count != null) {
-      setTransactions(transactionsResult.data as Transaction[]);
-      // SINKRONISASI totalItemsCount dari data tabel
-      setTotalItemsCount(transactionsResult.count);
-
-      // !!! HAPUS SEMUA LOGIKA KALKULASI STATS LAMA DARI SINI !!!
-      // setStats({ ... }) <--- HAPUS BLOK INI DARI SINI
-    } else {
-      setTransactions([]);
-      setTotalItemsCount(0);
-    }
-
-    setLoading(false); // Selesai loading tabel
-  };
-
-  loadTransactions();
-}, [
-  currentPage,
-  itemsPerPage,
-  searchQuery,
-  selectedTenant,
-  selectedType,
-  dateFrom,
-  dateTo,
-]);
-
-  // --- EFEK 3: Reset halaman ke 1 jika filter berubah ---
-  // Ini penting agar user tidak terjebak di halaman 5 saat hasil filternya hanya 1 halaman
+  // --- EFEK 4: Reset halaman ke 1 jika filter berubah ---
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedTenant, selectedType, dateFrom, dateTo]); // <-- Hanya state filter
-
-  // --- HAPUS: useEffect(applyFilters, ...) & fungsi applyFilters() ---
-  // Logika ini sudah pindah ke server
+  }, [
+    searchTenantQuery,
+    searchNoteQuery,
+    selectedTenant,
+    selectedType,
+    dateFrom,
+    dateTo,
+  ]); // <-- Hanya state filter
 
   // --- (Fungsi helper format tidak berubah) ---
   const formatCurrency = (amount: number) => {
@@ -234,9 +181,10 @@ useEffect(() => {
     });
   };
 
-  // Fungsi clearFilters tetap, EFEK 3 akan otomatis menangani reset halaman
+  // --- Fungsi clearFilters (DIPERBARUI) ---
   const clearFilters = () => {
-    setSearchQuery('');
+    setSearchTenantQuery('');
+    setSearchNoteQuery('');
     setSelectedTenant('all');
     setSelectedType('all');
     setDateFrom('');
@@ -244,11 +192,7 @@ useEffect(() => {
   };
 
   // --- HITUNG PAGINASI ---
-  // Logika ini sekarang menggunakan total data dari server
   const totalPages = Math.ceil(totalItemsCount / itemsPerPage);
-
-  // --- HAPUS: const paginatedTransactions = ... ---
-  // Data di state `transactions` sudah terpaginasi oleh server
 
   // Handler paginasi (tidak berubah)
   const handleNextPage = () => {
@@ -261,7 +205,6 @@ useEffect(() => {
 
   // --- RENDER ---
 
-  // Tampilkan skeleton loading besar hanya saat data tenant (dropdown) belum siap
   if (loadingTenants) {
     return (
       <div className="p-6 space-y-6">
@@ -289,7 +232,7 @@ useEffect(() => {
         </p>
       </div>
 
-      {/* Stats Cards (⚠️ INGAT: TIDAK AKURAT!) */}
+      {/* Stats Cards (Akurat) */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {/* Card Total Transaksi */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
@@ -316,7 +259,7 @@ useEffect(() => {
               <ArrowUpRight className="h-6 w-6 text-green-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Total Pemasukan (Halaman Ini)</p> {/* (Beri tanda) */}
+              <p className="text-sm text-gray-600">Total Pemasukan</p>
               {loadingStats ? (
                 <div className="h-7 w-28 bg-gray-200 rounded animate-pulse mt-1"></div>
               ) : (
@@ -334,7 +277,7 @@ useEffect(() => {
               <ArrowDownRight className="h-6 w-6 text-red-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Total Pengeluaran (Halaman Ini)</p> {/* (Beri tanda) */}
+              <p className="text-sm text-gray-600">Total Pengeluaran</p>
               {loadingStats ? (
                 <div className="h-7 w-28 bg-gray-200 rounded animate-pulse mt-1"></div>
               ) : (
@@ -352,7 +295,7 @@ useEffect(() => {
               <Users className="h-6 w-6 text-purple-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Tenant Aktif (Halaman Ini)</p> {/* (Beri tanda) */}
+              <p className="text-sm text-gray-600">Tenant Aktif</p>
               {loadingStats ? (
                 <div className="h-7 w-16 bg-gray-200 rounded animate-pulse mt-1"></div>
               ) : (
@@ -365,27 +308,30 @@ useEffect(() => {
         </div>
       </div>
 
-      {/* Filters (Tidak ada perubahan di JSX filter) */}
+      {/* --- Filters (Grid 4 Kolom) --- */}
       <div className="bg-white rounded-lg border border-gray-200 p-4">
         <div className="flex items-center gap-2 mb-4">
           <Filter className="h-5 w-5 text-gray-600" />
           <h2 className="font-semibold text-gray-900">Filter Transaksi</h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Search */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* 1. Search Tenant */}
           <div className="relative md:col-span-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
               type="text"
               placeholder="Cari tenant..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={searchTenantQuery}
+              onChange={(e) => setSearchTenantQuery(e.target.value)}
               className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
 
-          {/* Tenant Filter */}
+          {/* 2. Search Catatan */}
+          
+
+          {/* 3. Tenant Filter (Dropdown) */}
           <div className="md:col-span-1">
             <select
               value={selectedTenant}
@@ -401,7 +347,7 @@ useEffect(() => {
             </select>
           </div>
 
-          {/* Type Filter */}
+          {/* 4. Type Filter (Dropdown) */}
           <div className="md:col-span-1">
             <select
               value={selectedType}
@@ -414,12 +360,13 @@ useEffect(() => {
             </select>
           </div>
         </div>
-
-        {/* Date Range Filters - Separate Row */}
+        
+        {/* Filter Tanggal */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-          {/* Date From */}
           <div>
-            <label className="block text-xs text-gray-600 mb-1">Dari Tanggal</label>
+            <label className="block text-xs text-gray-600 mb-1">
+              Dari Tanggal
+            </label>
             <input
               type="date"
               value={dateFrom}
@@ -427,10 +374,10 @@ useEffect(() => {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-
-          {/* Date To */}
           <div>
-            <label className="block text-xs text-gray-600 mb-1">Sampai Tanggal</label>
+            <label className="block text-xs text-gray-600 mb-1">
+              Sampai Tanggal
+            </label>
             <input
               type="date"
               value={dateTo}
@@ -440,8 +387,13 @@ useEffect(() => {
           </div>
         </div>
 
-        {/* Clear Filters */}
-        {(searchQuery || selectedTenant !== 'all' || selectedType !== 'all' || dateFrom || dateTo) && (
+        {/* Tombol Clear Filters */}
+        {(searchTenantQuery ||
+          searchNoteQuery ||
+          selectedTenant !== 'all' ||
+          selectedType !== 'all' ||
+          dateFrom ||
+          dateTo) && (
           <div className="mt-4">
             <Button onClick={clearFilters} variant="outline" size="sm">
               Clear Filters
@@ -450,7 +402,7 @@ useEffect(() => {
         )}
       </div>
 
-      {/* Results Count (MODIFIKASI) */}
+      {/* Results Count */}
       <div className="flex justify-between items-center">
         <p className="text-sm text-gray-600">
           Menampilkan <span className="font-semibold">{transactions.length}</span>{' '}
@@ -458,17 +410,26 @@ useEffect(() => {
         </p>
       </div>
 
-      {/* Transactions Table (MODIFIKASI) */}
+      <div className="relative md:col-span-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Cari di catatan..."
+              value={searchNoteQuery}
+              onChange={(e) => setSearchNoteQuery(e.target.value)}
+              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+      {/* Transactions Table */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto relative"> {/* Tambah 'relative' untuk overlay loading */}
-          
-          {/* Overlay Loading */}
+        <div className="overflow-x-auto relative">
           {loading && (
             <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10">
-              <p>Memuat data...</p> {/* Ganti dengan spinner jika punya */}
+              <p>Memuat data...</p>
             </div>
           )}
-          
+
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
@@ -493,7 +454,6 @@ useEffect(() => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {/* Ganti filteredTransactions.length -> transactions.length */}
               {transactions.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
@@ -501,7 +461,6 @@ useEffect(() => {
                   </td>
                 </tr>
               ) : (
-                // Ganti filteredTransactions.map -> transactions.map
                 transactions.map((transaction) => (
                   <tr key={transaction.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
@@ -515,9 +474,13 @@ useEffect(() => {
                     <td className="px-4 py-3">
                       <div>
                         <p className="text-sm font-medium text-gray-900">
-                          {transaction.tenant.tenant_name || transaction.tenant.full_name}
+                          {transaction.tenant?.tenant_name ||
+                            transaction.tenant?.full_name ||
+                            'Tenant Tidak Ditemukan'}
                         </p>
-                        <p className="text-xs text-gray-500">{transaction.tenant.email}</p>
+                        <p className="text-xs text-gray-500">
+                          {transaction.tenant?.email || '-'}
+                        </p>
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -539,7 +502,9 @@ useEffect(() => {
                     <td className="px-4 py-3">
                       <span
                         className={`text-sm font-semibold ${
-                          transaction.type === 'PEMASUKAN' ? 'text-green-600' : 'text-red-600'
+                          transaction.type === 'PEMASUKAN'
+                            ? 'text-green-600'
+                            : 'text-red-600'
                         }`}
                       >
                         {formatCurrency(transaction.total_amount)}
@@ -566,8 +531,7 @@ useEffect(() => {
         </div>
       </div>
 
-      {/* Pagination Controls (MODIFIKASI) */}
-      {/* Logika totalPages sekarang sudah benar */}
+      {/* Pagination Controls */}
       {totalPages > 1 && (
         <div className="flex justify-between items-center pt-4">
           <div>
@@ -579,7 +543,7 @@ useEffect(() => {
           <div className="flex gap-2">
             <Button
               onClick={handlePrevPage}
-              disabled={currentPage === 1 || loading} // Tambah disable saat loading
+              disabled={currentPage === 1 || loading}
               variant="outline"
               size="sm"
             >
@@ -587,7 +551,7 @@ useEffect(() => {
             </Button>
             <Button
               onClick={handleNextPage}
-              disabled={currentPage === totalPages || loading} // Tambah disable saat loading
+              disabled={currentPage === totalPages || loading}
               variant="outline"
               size="sm"
             >
