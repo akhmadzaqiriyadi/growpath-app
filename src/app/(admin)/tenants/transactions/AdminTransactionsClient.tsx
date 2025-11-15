@@ -1,7 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getAllTransactions, getTenantsList } from '@/lib/actions/transactions';
+import {
+  getAllTransactions,
+  getTenantsList,
+  getTransactionsStats,
+} from '@/lib/actions/transactions'; // Pastikan path ini benar
 import { Database } from '@/types/database.types';
 import {
   ArrowUpRight,
@@ -11,12 +15,12 @@ import {
   Eye,
   Calendar,
   DollarSign,
-  TrendingUp,
   Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 
+// --- (Tipe tidak berubah) ---
 type Transaction = Database['public']['Tables']['transactions']['Row'] & {
   tenant: {
     id: string;
@@ -33,20 +37,31 @@ type Tenant = {
   email: string;
 };
 
+// --- KOMPONEN UTAMA ---
 export function AdminTransactionsClient() {
+  // --- State Data & Loading ---
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // Untuk loading tabel transaksi
+  const [loadingTenants, setLoadingTenants] = useState(true); // Untuk loading dropdown tenant
+  const [loadingStats, setLoadingStats] = useState(true);
 
-  // Filters
-  const [searchQuery, setSearchQuery] = useState('');
+  // --- State Paginasi ---
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10); // Kamu bisa sesuaikan ini
+  const [totalItemsCount, setTotalItemsCount] = useState(0); // Total data dari server
+
+  // --- State Filters ---
+  const [searchTenantQuery, setSearchTenantQuery] = useState(''); // Pencarian Tenant
+  const [searchNoteQuery, setSearchNoteQuery] = useState(''); // Pencarian Catatan
   const [selectedTenant, setSelectedTenant] = useState<string>('all');
-  const [selectedType, setSelectedType] = useState<'all' | 'PEMASUKAN' | 'PENGELUARAN'>('all');
+  const [selectedType, setSelectedType] = useState<
+    'all' | 'PEMASUKAN' | 'PENGELUARAN'
+  >('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
-  // Stats
+  // --- State Stats (Diisi dari server) ---
   const [stats, setStats] = useState({
     totalTransactions: 0,
     totalIncome: 0,
@@ -54,85 +69,102 @@ export function AdminTransactionsClient() {
     activeTenants: 0,
   });
 
+  // --- EFEK 1: Ambil data tenant (hanya sekali saat komponen dimuat) ---
   useEffect(() => {
-    loadData();
-  }, []);
+    const loadTenants = async () => {
+      setLoadingTenants(true);
+      const tenantsResult = await getTenantsList();
+      if (tenantsResult.data) {
+        setTenants(tenantsResult.data);
+      }
+      setLoadingTenants(false);
+    };
+    loadTenants();
+  }, []); // <-- Dependency array kosong, hanya jalan sekali
 
+  // --- EFEK 2: Ambil DATA STATS (setiap kali FILTER berubah) ---
   useEffect(() => {
-    applyFilters();
-  }, [transactions, searchQuery, selectedTenant, selectedType, dateFrom, dateTo]);
+    const loadStats = async () => {
+      setLoadingStats(true);
 
-  const loadData = async () => {
-    setLoading(true);
+      const filterParams = {
+        searchTenantQuery: searchTenantQuery,
+        searchNoteQuery: searchNoteQuery,
+        selectedTenant: selectedTenant,
+        selectedType: selectedType,
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+      };
 
-    const [transactionsResult, tenantsResult] = await Promise.all([
-      getAllTransactions(),
-      getTenantsList(),
-    ]);
+      const statsResult = await getTransactionsStats(filterParams);
+      setStats(statsResult);
+      setLoadingStats(false);
+    };
 
-    if (transactionsResult.data) {
-      setTransactions(transactionsResult.data as Transaction[]);
-      
-      // Calculate stats
-      const totalIncome = transactionsResult.data
-        .filter((t: any) => t.type === 'PEMASUKAN')
-        .reduce((sum: number, t: any) => sum + t.total_amount, 0);
-      
-      const totalExpense = transactionsResult.data
-        .filter((t: any) => t.type === 'PENGELUARAN')
-        .reduce((sum: number, t: any) => sum + t.total_amount, 0);
+    loadStats();
+  }, [
+    searchTenantQuery,
+    searchNoteQuery,
+    selectedTenant,
+    selectedType,
+    dateFrom,
+    dateTo,
+  ]); // <-- HANYA bergantung pada filter
 
-      const uniqueTenants = new Set(transactionsResult.data.map((t: any) => t.tenant_id));
+  // --- EFEK 3: Ambil DATA TABEL (setiap kali FILTER atau HALAMAN berubah) ---
+  useEffect(() => {
+    const loadTransactions = async () => {
+      setLoading(true);
 
-      setStats({
-        totalTransactions: transactionsResult.data.length,
-        totalIncome,
-        totalExpense,
-        activeTenants: uniqueTenants.size,
-      });
-    }
+      const params = {
+        page: currentPage,
+        itemsPerPage: itemsPerPage,
+        searchTenantQuery: searchTenantQuery,
+        searchNoteQuery: searchNoteQuery,
+        selectedTenant: selectedTenant,
+        selectedType: selectedType,
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+      };
 
-    if (tenantsResult.data) {
-      setTenants(tenantsResult.data);
-    }
+      const transactionsResult = await getAllTransactions(params);
 
-    setLoading(false);
-  };
+      if (transactionsResult.data && transactionsResult.count != null) {
+        setTransactions(transactionsResult.data as Transaction[]);
+        setTotalItemsCount(transactionsResult.count);
+      } else {
+        setTransactions([]);
+        setTotalItemsCount(0);
+      }
 
-  const applyFilters = () => {
-    let filtered = [...transactions];
+      setLoading(false);
+    };
 
-    // Search by tenant name or email
-    if (searchQuery) {
-      filtered = filtered.filter(
-        t =>
-          t.tenant.tenant_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          t.tenant.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          t.tenant.email.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
+    loadTransactions();
+  }, [
+    currentPage,
+    itemsPerPage,
+    searchTenantQuery,
+    searchNoteQuery,
+    selectedTenant,
+    selectedType,
+    dateFrom,
+    dateTo,
+  ]); // <-- Bergantung pada filter DAN halaman
 
-    // Filter by tenant
-    if (selectedTenant !== 'all') {
-      filtered = filtered.filter(t => t.tenant_id === selectedTenant);
-    }
+  // --- EFEK 4: Reset halaman ke 1 jika filter berubah ---
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    searchTenantQuery,
+    searchNoteQuery,
+    selectedTenant,
+    selectedType,
+    dateFrom,
+    dateTo,
+  ]); // <-- Hanya state filter
 
-    // Filter by type
-    if (selectedType !== 'all') {
-      filtered = filtered.filter(t => t.type === selectedType);
-    }
-
-    // Filter by date range
-    if (dateFrom) {
-      filtered = filtered.filter(t => t.transaction_date >= dateFrom);
-    }
-    if (dateTo) {
-      filtered = filtered.filter(t => t.transaction_date <= dateTo);
-    }
-
-    setFilteredTransactions(filtered);
-  };
-
+  // --- (Fungsi helper format tidak berubah) ---
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
@@ -149,21 +181,40 @@ export function AdminTransactionsClient() {
     });
   };
 
+  // --- Fungsi clearFilters (DIPERBARUI) ---
   const clearFilters = () => {
-    setSearchQuery('');
+    setSearchTenantQuery('');
+    setSearchNoteQuery('');
     setSelectedTenant('all');
     setSelectedType('all');
     setDateFrom('');
     setDateTo('');
   };
 
-  if (loading) {
+  // --- HITUNG PAGINASI ---
+  const totalPages = Math.ceil(totalItemsCount / itemsPerPage);
+
+  // Handler paginasi (tidak berubah)
+  const handleNextPage = () => {
+    setCurrentPage((prev) => Math.min(prev + 1, totalPages));
+  };
+
+  const handlePrevPage = () => {
+    setCurrentPage((prev) => Math.max(prev - 1, 1));
+  };
+
+  // --- RENDER ---
+
+  if (loadingTenants) {
     return (
       <div className="p-6 space-y-6">
         <div className="h-10 bg-gray-200 rounded animate-pulse w-64"></div>
         <div className="grid grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-24 bg-gray-200 rounded-lg animate-pulse"></div>
+            <div
+              key={i}
+              className="h-24 bg-gray-200 rounded-lg animate-pulse"
+            ></div>
           ))}
         </div>
         <div className="h-96 bg-gray-200 rounded-lg animate-pulse"></div>
@@ -176,11 +227,14 @@ export function AdminTransactionsClient() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
-        <p className="text-gray-600 mt-1">Kelola dan monitor semua transaksi tenant</p>
+        <p className="text-gray-600 mt-1">
+          Kelola dan monitor semua transaksi tenant
+        </p>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards (Akurat) */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {/* Card Total Transaksi */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-primary/10 rounded-lg">
@@ -188,11 +242,17 @@ export function AdminTransactionsClient() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Total Transaksi</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.totalTransactions}</p>
+              {loadingStats ? (
+                <div className="h-7 w-20 bg-gray-200 rounded animate-pulse mt-1"></div>
+              ) : (
+                <p className="text-2xl font-bold text-gray-900">
+                  {stats.totalTransactions}
+                </p>
+              )}
             </div>
           </div>
         </div>
-
+        {/* Card Total Pemasukan */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-green-100 rounded-lg">
@@ -200,13 +260,17 @@ export function AdminTransactionsClient() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Total Pemasukan</p>
-              <p className="text-xl font-bold text-green-600">
-                {formatCurrency(stats.totalIncome)}
-              </p>
+              {loadingStats ? (
+                <div className="h-7 w-28 bg-gray-200 rounded animate-pulse mt-1"></div>
+              ) : (
+                <p className="text-xl font-bold text-green-600">
+                  {formatCurrency(stats.totalIncome)}
+                </p>
+              )}
             </div>
           </div>
         </div>
-
+        {/* Card Total Pengeluaran */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-red-100 rounded-lg">
@@ -214,13 +278,17 @@ export function AdminTransactionsClient() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Total Pengeluaran</p>
-              <p className="text-xl font-bold text-red-600">
-                {formatCurrency(stats.totalExpense)}
-              </p>
+              {loadingStats ? (
+                <div className="h-7 w-28 bg-gray-200 rounded animate-pulse mt-1"></div>
+              ) : (
+                <p className="text-xl font-bold text-red-600">
+                  {formatCurrency(stats.totalExpense)}
+                </p>
+              )}
             </div>
           </div>
         </div>
-
+        {/* Card Tenant Aktif */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-purple-100 rounded-lg">
@@ -228,33 +296,42 @@ export function AdminTransactionsClient() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Tenant Aktif</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.activeTenants}</p>
+              {loadingStats ? (
+                <div className="h-7 w-16 bg-gray-200 rounded animate-pulse mt-1"></div>
+              ) : (
+                <p className="text-2xl font-bold text-gray-900">
+                  {stats.activeTenants}
+                </p>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Filters */}
+      {/* --- Filters (Grid 4 Kolom) --- */}
       <div className="bg-white rounded-lg border border-gray-200 p-4">
         <div className="flex items-center gap-2 mb-4">
           <Filter className="h-5 w-5 text-gray-600" />
           <h2 className="font-semibold text-gray-900">Filter Transaksi</h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Search */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* 1. Search Tenant */}
           <div className="relative md:col-span-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
               type="text"
               placeholder="Cari tenant..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={searchTenantQuery}
+              onChange={(e) => setSearchTenantQuery(e.target.value)}
               className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
 
-          {/* Tenant Filter */}
+          {/* 2. Search Catatan */}
+          
+
+          {/* 3. Tenant Filter (Dropdown) */}
           <div className="md:col-span-1">
             <select
               value={selectedTenant}
@@ -270,7 +347,7 @@ export function AdminTransactionsClient() {
             </select>
           </div>
 
-          {/* Type Filter */}
+          {/* 4. Type Filter (Dropdown) */}
           <div className="md:col-span-1">
             <select
               value={selectedType}
@@ -283,12 +360,13 @@ export function AdminTransactionsClient() {
             </select>
           </div>
         </div>
-
-        {/* Date Range Filters - Separate Row */}
+        
+        {/* Filter Tanggal */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-          {/* Date From */}
           <div>
-            <label className="block text-xs text-gray-600 mb-1">Dari Tanggal</label>
+            <label className="block text-xs text-gray-600 mb-1">
+              Dari Tanggal
+            </label>
             <input
               type="date"
               value={dateFrom}
@@ -296,10 +374,10 @@ export function AdminTransactionsClient() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-
-          {/* Date To */}
           <div>
-            <label className="block text-xs text-gray-600 mb-1">Sampai Tanggal</label>
+            <label className="block text-xs text-gray-600 mb-1">
+              Sampai Tanggal
+            </label>
             <input
               type="date"
               value={dateTo}
@@ -309,8 +387,13 @@ export function AdminTransactionsClient() {
           </div>
         </div>
 
-        {/* Clear Filters */}
-        {(searchQuery || selectedTenant !== 'all' || selectedType !== 'all' || dateFrom || dateTo) && (
+        {/* Tombol Clear Filters */}
+        {(searchTenantQuery ||
+          searchNoteQuery ||
+          selectedTenant !== 'all' ||
+          selectedType !== 'all' ||
+          dateFrom ||
+          dateTo) && (
           <div className="mt-4">
             <Button onClick={clearFilters} variant="outline" size="sm">
               Clear Filters
@@ -322,14 +405,31 @@ export function AdminTransactionsClient() {
       {/* Results Count */}
       <div className="flex justify-between items-center">
         <p className="text-sm text-gray-600">
-          Menampilkan <span className="font-semibold">{filteredTransactions.length}</span> dari{' '}
-          <span className="font-semibold">{transactions.length}</span> transaksi
+          Menampilkan <span className="font-semibold">{transactions.length}</span>{' '}
+          dari <span className="font-semibold">{totalItemsCount}</span> transaksi
         </p>
       </div>
 
+      <div className="relative md:col-span-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Cari di catatan..."
+              value={searchNoteQuery}
+              onChange={(e) => setSearchNoteQuery(e.target.value)}
+              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
       {/* Transactions Table */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto relative">
+          {loading && (
+            <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10">
+              <p>Memuat data...</p>
+            </div>
+          )}
+
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
@@ -354,14 +454,14 @@ export function AdminTransactionsClient() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredTransactions.length === 0 ? (
+              {transactions.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                    Tidak ada transaksi ditemukan
+                    {loading ? 'Memuat...' : 'Tidak ada transaksi ditemukan'}
                   </td>
                 </tr>
               ) : (
-                filteredTransactions.map((transaction) => (
+                transactions.map((transaction) => (
                   <tr key={transaction.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -374,9 +474,13 @@ export function AdminTransactionsClient() {
                     <td className="px-4 py-3">
                       <div>
                         <p className="text-sm font-medium text-gray-900">
-                          {transaction.tenant.tenant_name || transaction.tenant.full_name}
+                          {transaction.tenant?.tenant_name ||
+                            transaction.tenant?.full_name ||
+                            'Tenant Tidak Ditemukan'}
                         </p>
-                        <p className="text-xs text-gray-500">{transaction.tenant.email}</p>
+                        <p className="text-xs text-gray-500">
+                          {transaction.tenant?.email || '-'}
+                        </p>
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -398,7 +502,9 @@ export function AdminTransactionsClient() {
                     <td className="px-4 py-3">
                       <span
                         className={`text-sm font-semibold ${
-                          transaction.type === 'PEMASUKAN' ? 'text-green-600' : 'text-red-600'
+                          transaction.type === 'PEMASUKAN'
+                            ? 'text-green-600'
+                            : 'text-red-600'
                         }`}
                       >
                         {formatCurrency(transaction.total_amount)}
@@ -424,6 +530,36 @@ export function AdminTransactionsClient() {
           </table>
         </div>
       </div>
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="flex justify-between items-center pt-4">
+          <div>
+            <span className="text-sm text-gray-600">
+              Halaman <span className="font-semibold">{currentPage}</span> dari{' '}
+              <span className="font-semibold">{totalPages}</span>
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              onClick={handlePrevPage}
+              disabled={currentPage === 1 || loading}
+              variant="outline"
+              size="sm"
+            >
+              Previous
+            </Button>
+            <Button
+              onClick={handleNextPage}
+              disabled={currentPage === totalPages || loading}
+              variant="outline"
+              size="sm"
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
