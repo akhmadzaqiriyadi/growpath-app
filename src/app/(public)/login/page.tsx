@@ -19,6 +19,7 @@ function LoginMessage({ message }: { message?: string }) {
 
 export default async function LoginPage({
   searchParams,
+  
 }: {
   searchParams: Promise<{ message?: string }>;
 }) {

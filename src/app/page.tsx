@@ -1,103 +1,90 @@
-import Image from "next/image";
+'use client'; // <- wajib kalau pakai hooks di Next.js (seperti useRouter)
+
+import React from 'react';
+import { useRouter } from 'next/navigation';
+
+// SVG Icon Components
+const QrCode = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+    viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect width="5" height="5" x="3" y="3" rx="1" />
+    <rect width="5" height="5" x="16" y="3" rx="1" />
+    <rect width="5" height="5" x="3" y="16" rx="1" />
+    <path d="M21 16h-3a2 2 0 0 0-2 2v3" />
+    <path d="M21 21v.01" />
+    <path d="M12 7v4a1 1 0 0 1-1 1H7" />
+    <path d="M12 12v3" />
+    <path d="M16 12h-3a1 1 0 0 0-1 1v4" />
+  </svg>
+);
+
+const LogIn = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24"
+    viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+    <polyline points="10 17 15 12 10 7" />
+    <line x1="15" x2="3" y1="12" y2="12" />
+  </svg>
+);
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const router = useRouter();
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const handleScannerClick = () => {
+    console.log('Pindah ke halaman scanner');
+    router.push('/scanner');
+  };
+
+  const handleLoginClick = () => {
+    console.log('Pindah ke halaman login');
+    router.push('/login');
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 antialiased text-gray-900 
+                    bg-amber-50 font-sans relative overflow-hidden">
+      <div className="max-w-4xl w-full z-10 text-center p-4">
+        <div className="inline-flex items-center text-xs font-medium text-amber-800 
+                        rounded-full mb-8 backdrop-blur-sm">
+          <div className="w-16 h-16 bg-orange-200 rounded-full flex items-center justify-center shadow-lg">
+            <span className="text-xl font-extrabold text-orange-800">GP</span>
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+        <h1 className="text-5xl sm:text-7xl font-extrabold tracking-tight mb-6 leading-tight text-gray-900">
+          Welcome to UtyGrowpath #3
+        </h1>
+
+        <p className="text-lg sm:text-xl text-orange-800 mb-12 max-w-2xl mx-auto">
+          Pengunjung silahkan untuk Scanner Barcode yang sudah disediakan
+        </p>
+
+        <div className="flex flex-col sm:flex-row justify-center gap-6">
+          <button
+            onClick={handleScannerClick}
+            className="flex items-center justify-center gap-3 px-8 py-4 text-lg font-bold rounded-xl 
+                        bg-orange-600 text-white shadow-lg shadow-orange-500/50 
+                        transition-all duration-300 transform hover:scale-[1.05] hover:bg-orange-700 
+                        focus:outline-none focus:ring-4 focus:ring-orange-500/50"
+          >
+            <QrCode className="w-6 h-6" />
+            Scanner
+          </button>
+
+          <button
+            onClick={handleLoginClick}
+            className="flex items-center justify-center gap-3 px-8 py-4 text-lg font-bold rounded-xl 
+                        bg-transparent text-orange-700 border-2 border-orange-500 
+                        transition-all duration-300 transform hover:scale-[1.05] hover:bg-orange-50 
+                        focus:outline-none focus:ring-4 focus:ring-orange-300/50"
+          >
+            <LogIn className="w-6 h-6" />
+            Login
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
