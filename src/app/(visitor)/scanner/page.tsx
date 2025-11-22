@@ -143,8 +143,13 @@ export default function QRScannerPage() {
 
   // Fungsi untuk Inisialisasi/Start Scanner (Dipanggil oleh Tombol)
   const initScanner = async () => {
-    if (scannerRef.current) return;
+    if (scannerRef.current) {
+      console.log("Scanner already initialized");
+      return;
+    }
 
+    console.log("Starting scanner initialization...");
+    
     // Reset states
     setIsScanning(true);
     setError(null);
@@ -152,7 +157,7 @@ export default function QRScannerPage() {
     setData("Meminta izin kamera...");
 
     try {
-      // Langsung inisialisasi scanner - biarkan library yang handle permission
+      // Langsung inisialisasi scanner
       const scanner = new Html5QrcodeScanner(
         QR_SCANNER_ID,
         {
@@ -166,51 +171,49 @@ export default function QRScannerPage() {
         false
       );
 
+      console.log("Scanner object created, storing in ref...");
       scannerRef.current = scanner;
       
-      // Render scanner - ini akan meminta izin kamera
+      console.log("Rendering scanner...");
+      
+      // Render scanner dengan promise handling yang proper
       scanner.render(
         (decodedText) => {
-          // Success callback
+          console.log("QR Code detected:", decodedText);
           onScanSuccess(decodedText);
         },
         (errorMessage) => {
-          // Error callback - ignore minor errors
-          onScanError(errorMessage);
+          // Ignore frequent scanning errors
+          // console.log("Scan error (ignored):", errorMessage);
         }
-      ).then(() => {
-        // Scanner berhasil di-render
-        setIsScannerInitialized(true);
-        setData("Scanner aktif. Arahkan kamera ke QR Code.");
-      }).catch((error) => {
-        // Error saat render (biasanya izin ditolak)
-        console.error("Error rendering scanner:", error);
-        
-        setPermissionDenied(true);
-        setIsScanning(false);
-        setIsScannerInitialized(false);
-        
-        if (error.toString().includes('NotAllowedError') || error.toString().includes('Permission')) {
-          setError("Izin kamera ditolak. Silakan izinkan akses kamera di pengaturan browser Anda.");
-        } else if (error.toString().includes('NotFoundError')) {
-          setError("Kamera tidak ditemukan pada perangkat Anda.");
-        } else if (error.toString().includes('NotReadableError')) {
-          setError("Kamera sedang digunakan oleh aplikasi lain.");
-        } else {
-          setError(`Error akses kamera: ${error.toString()}`);
-        }
-        
-        setData("Gunakan tombol 'Unggah File' untuk scan dari gambar.");
-      });
+      );
+      
+      // Set initialized setelah render dipanggil
+      console.log("Scanner rendered, setting initialized state...");
+      setIsScannerInitialized(true);
+      setData("Scanner aktif. Arahkan kamera ke QR Code.");
       
     } catch (err: any) {
-      console.error("Error inisialisasi scanner:", err);
-      setError(
-        err.message || "Gagal menginisialisasi kamera. Pastikan izin kamera diberikan."
-      );
+      console.error("Error during scanner initialization:", err);
+      
+      setPermissionDenied(true);
       setIsScanning(false);
       setIsScannerInitialized(false);
-      setPermissionDenied(true);
+      scannerRef.current = null;
+      
+      const errorString = err.toString();
+      
+      if (errorString.includes('NotAllowedError') || errorString.includes('Permission')) {
+        setError("Izin kamera ditolak. Silakan izinkan akses kamera di pengaturan browser Anda.");
+      } else if (errorString.includes('NotFoundError')) {
+        setError("Kamera tidak ditemukan pada perangkat Anda.");
+      } else if (errorString.includes('NotReadableError')) {
+        setError("Kamera sedang digunakan oleh aplikasi lain.");
+      } else {
+        setError(`Error akses kamera: ${errorString}`);
+      }
+      
+      setData("Gunakan tombol 'Unggah File' untuk scan dari gambar.");
     }
   };
 
@@ -237,9 +240,11 @@ export default function QRScannerPage() {
 
   // Fungsi untuk stop scanner
   const handleStopScan = async () => {
+    console.log("Stopping scanner...");
     if (scannerRef.current) {
       try {
         await scannerRef.current.clear();
+        console.log("Scanner cleared successfully");
       } catch (e) {
         console.warn("Error stopping scanner:", e);
       } finally {
@@ -248,6 +253,10 @@ export default function QRScannerPage() {
         setIsScanning(false);
         setData("Scanner dihentikan. Klik tombol untuk memulai lagi.");
       }
+    } else {
+      console.log("No scanner to stop");
+      setIsScanning(false);
+      setIsScannerInitialized(false);
     }
   };
 
@@ -325,20 +334,18 @@ export default function QRScannerPage() {
         style={{ width: "100%", maxWidth: "450px" }}
         className="rounded-xl shadow-2xl overflow-hidden bg-white p-2 transform transition-all duration-500 border border-amber-200"
       >
-        {/* Scanner container - selalu tampil */}
+        {/* Scanner container - tampil saat isScanning true */}
         <div
           id={QR_SCANNER_ID}
-          className={`transition-all duration-300 ${
-            !isScanning || !isScannerInitialized || isImageProcessing
-              ? "hidden"
-              : ""
-          }`}
+          style={{
+            display: isScanning && !isImageProcessing ? 'block' : 'none',
+          }}
         >
           {/* Scanner akan di-inject ke div ini */}
         </div>
 
         {/* Placeholder utama saat kamera nonaktif atau memproses */}
-        {(!isScanning || !isScannerInitialized || isImageProcessing) && (
+        {(!isScanning || isImageProcessing) && (
           <div
             className={`p-12 text-center flex flex-col items-center justify-center min-h-[300px] transition-all duration-300 ${
               isImageProcessing
@@ -394,7 +401,7 @@ export default function QRScannerPage() {
         )}
 
         {/* Tombol Stop Scanner */}
-        {isScanning && isScannerInitialized && !isImageProcessing && (
+        {isScanning && !isImageProcessing && (
           <button
             onClick={handleStopScan}
             className="flex items-center justify-center w-full bg-red-500 text-white p-4 rounded-full font-bold uppercase tracking-wider shadow-xl shadow-red-500/50 hover:bg-red-600 transition duration-300 transform hover:scale-[1.02]"
