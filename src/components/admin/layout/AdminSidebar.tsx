@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import {
   LayoutDashboard,
   Users,
@@ -10,7 +11,6 @@ import {
   BarChart3,
   QrCode,
   Settings,
-  Database as DatabaseIcon,
   User as UserIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -59,7 +59,15 @@ export default function AdminSidebar() {
     <nav className="hidden md:flex flex-col h-full w-64 border-r border-border bg-sidebar text-sidebar-foreground p-4 gap-4 fixed">
       {/* Logo */}
       <div className="flex items-center gap-2 px-2 py-4">
-        <DatabaseIcon className="size-8 text-primary" />
+        <div className="relative w-10 h-10">
+          <Image
+            src="/logo.png"
+            alt="Growpath Logo"
+            fill
+            className="object-contain"
+            priority
+          />
+        </div>
         <h1 className="text-2xl font-bold">Growpath</h1>
       </div>
 
