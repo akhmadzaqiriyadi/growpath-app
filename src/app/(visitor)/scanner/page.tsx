@@ -161,7 +161,6 @@ export default function QRScannerPage() {
                 aspectRatio: 1
               }}
               components={{
-                audio: false,
                 finder: true
               }}
               styles={{
