@@ -152,59 +152,56 @@ export default function QRScannerPage() {
     setData("Meminta izin kamera...");
 
     try {
-      // Cek dan minta izin kamera terlebih dahulu
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        try {
-          // Minta izin kamera eksplisit
-          const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: "environment" } 
-          });
-          
-          // Izin diberikan, stop stream sementara
-          stream.getTracks().forEach(track => track.stop());
-          
-          setData("Izin kamera diberikan. Memulai scanner...");
-          
-          // Inisialisasi scanner
-          const scanner = new Html5QrcodeScanner(
-            QR_SCANNER_ID,
-            {
-              fps: 10,
-              qrbox: { width: 250, height: 250 },
-              rememberLastUsedCamera: true,
-              disableFlip: false,
-            },
-            false
-          );
+      // Langsung inisialisasi scanner - biarkan library yang handle permission
+      const scanner = new Html5QrcodeScanner(
+        QR_SCANNER_ID,
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          rememberLastUsedCamera: true,
+          disableFlip: false,
+          aspectRatio: 1.0,
+          showTorchButtonIfSupported: true,
+        },
+        false
+      );
 
-          scannerRef.current = scanner;
-          setIsScannerInitialized(true);
-
-          // Render scanner
-          scanner.render(onScanSuccess, onScanError);
-          
-        } catch (permissionError: any) {
-          console.error("Izin kamera ditolak:", permissionError);
-          
-          setPermissionDenied(true);
-          setIsScanning(false);
-          setIsScannerInitialized(false);
-          
-          if (permissionError.name === 'NotAllowedError') {
-            setError("Izin kamera ditolak. Silakan izinkan akses kamera di pengaturan browser Anda.");
-          } else if (permissionError.name === 'NotFoundError') {
-            setError("Kamera tidak ditemukan pada perangkat Anda.");
-          } else if (permissionError.name === 'NotReadableError') {
-            setError("Kamera sedang digunakan oleh aplikasi lain.");
-          } else {
-            setError(`Error akses kamera: ${permissionError.message}`);
-          }
-          
-          setData("Gunakan tombol 'Unggah File' untuk scan dari gambar.");
+      scannerRef.current = scanner;
+      
+      // Render scanner - ini akan meminta izin kamera
+      scanner.render(
+        (decodedText) => {
+          // Success callback
+          onScanSuccess(decodedText);
+        },
+        (errorMessage) => {
+          // Error callback - ignore minor errors
+          onScanError(errorMessage);
         }
-      } else {
-        throw new Error("Browser tidak mendukung akses kamera.");
-      }
+      ).then(() => {
+        // Scanner berhasil di-render
+        setIsScannerInitialized(true);
+        setData("Scanner aktif. Arahkan kamera ke QR Code.");
+      }).catch((error) => {
+        // Error saat render (biasanya izin ditolak)
+        console.error("Error rendering scanner:", error);
+        
+        setPermissionDenied(true);
+        setIsScanning(false);
+        setIsScannerInitialized(false);
+        
+        if (error.toString().includes('NotAllowedError') || error.toString().includes('Permission')) {
+          setError("Izin kamera ditolak. Silakan izinkan akses kamera di pengaturan browser Anda.");
+        } else if (error.toString().includes('NotFoundError')) {
+          setError("Kamera tidak ditemukan pada perangkat Anda.");
+        } else if (error.toString().includes('NotReadableError')) {
+          setError("Kamera sedang digunakan oleh aplikasi lain.");
+        } else {
+          setError(`Error akses kamera: ${error.toString()}`);
+        }
+        
+        setData("Gunakan tombol 'Unggah File' untuk scan dari gambar.");
+      });
       
     } catch (err: any) {
       console.error("Error inisialisasi scanner:", err);
@@ -236,6 +233,22 @@ export default function QRScannerPage() {
   // Fungsi yang dipanggil oleh tombol "Mulai Pindai"
   const handleStartScan = () => {
     initScanner();
+  };
+
+  // Fungsi untuk stop scanner
+  const handleStopScan = async () => {
+    if (scannerRef.current) {
+      try {
+        await scannerRef.current.clear();
+      } catch (e) {
+        console.warn("Error stopping scanner:", e);
+      } finally {
+        scannerRef.current = null;
+        setIsScannerInitialized(false);
+        setIsScanning(false);
+        setData("Scanner dihentikan. Klik tombol untuk memulai lagi.");
+      }
+    }
   };
 
   // handler upload gambar
@@ -310,14 +323,15 @@ export default function QRScannerPage() {
       </h1>
       <div
         style={{ width: "100%", maxWidth: "450px" }}
-        className="rounded-xl shadow-2xl overflow-hidden bg-white p-2 transform transition-all duration-500 border border-amber-200" // Background putih, border tipis
+        className="rounded-xl shadow-2xl overflow-hidden bg-white p-2 transform transition-all duration-500 border border-amber-200"
       >
+        {/* Scanner container - selalu tampil */}
         <div
           id={QR_SCANNER_ID}
-          className={`${
-            isScanning && isScannerInitialized && !isImageProcessing
-              ? ""
-              : "hidden"
+          className={`transition-all duration-300 ${
+            !isScanning || !isScannerInitialized || isImageProcessing
+              ? "hidden"
+              : ""
           }`}
         >
           {/* Scanner akan di-inject ke div ini */}
@@ -329,18 +343,17 @@ export default function QRScannerPage() {
             className={`p-12 text-center flex flex-col items-center justify-center min-h-[300px] transition-all duration-300 ${
               isImageProcessing
                 ? "bg-amber-100 text-amber-800"
-                : "bg-white text-gray-500" // Nuansa kuning muda untuk loading, putih untuk idle
+                : "bg-white text-gray-500"
             }`}
           >
             {isImageProcessing ? (
               <>
-                <Loader  />{" "}
-                {/* Menambahkan prop color ke Loader jika Anda ingin mengubah warna spin-nya */}
+                <Loader />
                 <p className="mt-4 font-semibold text-lg">{data}</p>
               </>
             ) : (
               <p className="font-medium text-lg text-gray-500">
-                <CameraIcon  /> Kamera menunggu aktivasi.
+                <CameraIcon /> {data}
               </p>
             )}
           </div>
@@ -377,6 +390,16 @@ export default function QRScannerPage() {
             className="flex items-center justify-center w-full bg-amber-500 text-white p-4 rounded-full font-bold uppercase tracking-wider shadow-xl shadow-amber-500/50 hover:bg-amber-600 transition duration-300 transform hover:scale-[1.02]"
           >
             <CameraIcon /> Mulai Pindai QR Code
+          </button>
+        )}
+
+        {/* Tombol Stop Scanner */}
+        {isScanning && isScannerInitialized && !isImageProcessing && (
+          <button
+            onClick={handleStopScan}
+            className="flex items-center justify-center w-full bg-red-500 text-white p-4 rounded-full font-bold uppercase tracking-wider shadow-xl shadow-red-500/50 hover:bg-red-600 transition duration-300 transform hover:scale-[1.02]"
+          >
+            ⏹ Stop Scanner
           </button>
         )}
 
