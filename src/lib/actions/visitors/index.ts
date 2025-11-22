@@ -58,6 +58,7 @@ export async function getVisitorsByDay(days: number = 7): Promise<VisitorsByDay[
       label: date.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' }),
     });
   }
+  
 
   // Fetch all visitors in the last N days
   const startDate = dateRange[0].date;
