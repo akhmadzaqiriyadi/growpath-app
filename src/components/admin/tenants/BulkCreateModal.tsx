@@ -91,8 +91,9 @@ export function BulkCreateModal({ isOpen, onClose, onSuccess }: BulkCreateModalP
     try {
       const result = await bulkCreateTenants(tenants);
       
-      if (result.success && result.data) {
-        const { success, failed, errors } = result.data;
+      if (result.success && 'data' in result && result.data) {
+        const data = result.data as { success: number; failed: number; errors: string[] };
+        const { success, failed, errors } = data;
         
         let message = `Berhasil membuat ${success} tenant.`;
         if (failed > 0) {
