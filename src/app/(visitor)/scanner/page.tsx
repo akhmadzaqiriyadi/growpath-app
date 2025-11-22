@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Html5Qrcode, Html5QrcodeScanner } from "html5-qrcode";
+import { QrScanner } from '@yudiel/react-qr-scanner';
 
 // --- HELPER ICONS ---
 // Anda dapat mengganti ini dengan library ikon seperti lucide-react atau react-icons
@@ -70,37 +70,19 @@ const Loader = () => (
 // --- END HELPER ICONS ---
 
 const REDIRECT_URL = "https://utygrowpath.site";
-const QR_SCANNER_ID = "qr-code-full-region";
 
 export default function QRScannerPage() {
-  const [data, setData] = useState(
-    "Arahkan kamera ke QR Code atau unggah gambar"
-  );
+  const [data, setData] = useState("Tekan tombol untuk mulai scan QR Code");
   const [error, setError] = useState<string | null>(null);
-  const [isScannerInitialized, setIsScannerInitialized] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
-  const [isImageProcessing, setIsImageProcessing] = useState(false);
-  const [permissionDenied, setPermissionDenied] = useState(false);
-  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   const router = useRouter();
 
-  // record and redirect (centralized)
+  // record and redirect
   const recordAndRedirect = async (qrData: string) => {
-    // block further scans immediately
+    setIsProcessing(true);
     setIsScanning(false);
-    setIsImageProcessing(true);
     setData("Mencatat kunjungan ke server...");
-
-    // try to clear scanner UI if exists
-    if (scannerRef.current) {
-      try {
-        await scannerRef.current.clear();
-      } catch (e) {
-        console.warn("Gagal clear scanner (tidak kritis):", e);
-      }
-      scannerRef.current = null;
-      setIsScannerInitialized(false); // Reset status inisialisasi
-    }
 
     try {
       const response = await fetch("/api/record-visitor", {
@@ -110,13 +92,11 @@ export default function QRScannerPage() {
       });
 
       if (response.ok) {
-        // sukses -> redirect
         setData("Pencatatan Berhasil! Mengarahkan...");
         window.location.href = REDIRECT_URL;
       } else {
         console.error("Gagal mencatat di API. Status:", response.status);
         setData(`Gagal mencatat: ${response.status}. Mengarahkan...`);
-        // tetap redirect sesuai logika awal
         setTimeout(() => (window.location.href = REDIRECT_URL), 1200);
       }
     } catch (e) {
@@ -124,236 +104,82 @@ export default function QRScannerPage() {
       setData("Error koneksi API. Mengarahkan...");
       setTimeout(() => (window.location.href = REDIRECT_URL), 1200);
     } finally {
-      setIsImageProcessing(false);
+      setIsProcessing(false);
     }
   };
 
-  // dipanggil saat kamera berhasil decode
-  const onScanSuccess = (decodedText: string) => {
-    // hindari pemanggilan berulang
-    if (!isScanning) return;
-    setIsScanning(false);
-    setData("✅ QR Ditemukan! Memproses...");
-    recordAndRedirect(decodedText);
-  };
-
-  const onScanError = (_errorMessage: string) => {
-    // non-fatal scan errors — diabaikan
-  };
-
-  // Fungsi untuk Inisialisasi/Start Scanner (Dipanggil oleh Tombol)
-  const initScanner = async () => {
-    if (scannerRef.current) {
-      console.log("Scanner already initialized");
-      return;
+  // Handler saat QR berhasil di-scan
+  const handleScan = (result: any) => {
+    if (result && !isProcessing) {
+      const qrText = result[0]?.rawValue || result;
+      console.log("QR Code detected:", qrText);
+      setData("✅ QR Ditemukan! Memproses...");
+      recordAndRedirect(qrText);
     }
+  };
 
-    console.log("Starting scanner initialization...");
-    
-    // Reset states
+  // Handler error
+  const handleError = (error: any) => {
+    console.error("Scanner error:", error);
+    if (error?.name === 'NotAllowedError') {
+      setError("Izin kamera ditolak. Silakan izinkan akses kamera.");
+      setIsScanning(false);
+    }
+  };
+
+  // Start scanning
+  const handleStartScan = () => {
     setIsScanning(true);
     setError(null);
-    setPermissionDenied(false);
-    setData("Meminta izin kamera...");
-
-    try {
-      // Langsung inisialisasi scanner
-      const scanner = new Html5QrcodeScanner(
-        QR_SCANNER_ID,
-        {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
-          rememberLastUsedCamera: true,
-          disableFlip: false,
-          aspectRatio: 1.0,
-          showTorchButtonIfSupported: true,
-        },
-        false
-      );
-
-      console.log("Scanner object created, storing in ref...");
-      scannerRef.current = scanner;
-      
-      console.log("Rendering scanner...");
-      
-      // Render scanner dengan promise handling yang proper
-      scanner.render(
-        (decodedText) => {
-          console.log("QR Code detected:", decodedText);
-          onScanSuccess(decodedText);
-        },
-        (errorMessage) => {
-          // Ignore frequent scanning errors
-          // console.log("Scan error (ignored):", errorMessage);
-        }
-      );
-      
-      // Set initialized setelah render dipanggil
-      console.log("Scanner rendered, setting initialized state...");
-      setIsScannerInitialized(true);
-      setData("Scanner aktif. Arahkan kamera ke QR Code.");
-      
-    } catch (err: any) {
-      console.error("Error during scanner initialization:", err);
-      
-      setPermissionDenied(true);
-      setIsScanning(false);
-      setIsScannerInitialized(false);
-      scannerRef.current = null;
-      
-      const errorString = err.toString();
-      
-      if (errorString.includes('NotAllowedError') || errorString.includes('Permission')) {
-        setError("Izin kamera ditolak. Silakan izinkan akses kamera di pengaturan browser Anda.");
-      } else if (errorString.includes('NotFoundError')) {
-        setError("Kamera tidak ditemukan pada perangkat Anda.");
-      } else if (errorString.includes('NotReadableError')) {
-        setError("Kamera sedang digunakan oleh aplikasi lain.");
-      } else {
-        setError(`Error akses kamera: ${errorString}`);
-      }
-      
-      setData("Gunakan tombol 'Unggah File' untuk scan dari gambar.");
-    }
+    setData("Scanner aktif. Arahkan kamera ke QR Code.");
   };
 
-  // useEffect sekarang hanya untuk cleanup saat unmount
-  useEffect(() => {
-    return () => {
-      if (scannerRef.current) {
-        scannerRef.current
-          .clear()
-          .catch((e) => console.warn("Error saat clear scanner di cleanup:", e))
-          .finally(() => {
-            scannerRef.current = null;
-            setIsScannerInitialized(false);
-            setIsScanning(false);
-          });
-      }
-    };
-  }, []);
-
-  // Fungsi yang dipanggil oleh tombol "Mulai Pindai"
-  const handleStartScan = () => {
-    initScanner();
-  };
-
-  // Fungsi untuk stop scanner
-  const handleStopScan = async () => {
-    console.log("Stopping scanner...");
-    if (scannerRef.current) {
-      try {
-        await scannerRef.current.clear();
-        console.log("Scanner cleared successfully");
-      } catch (e) {
-        console.warn("Error stopping scanner:", e);
-      } finally {
-        scannerRef.current = null;
-        setIsScannerInitialized(false);
-        setIsScanning(false);
-        setData("Scanner dihentikan. Klik tombol untuk memulai lagi.");
-      }
-    } else {
-      console.log("No scanner to stop");
-      setIsScanning(false);
-      setIsScannerInitialized(false);
-    }
-  };
-
-  // handler upload gambar
-  const handleImageUpload = async (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setError(null);
-    setIsImageProcessing(true);
+  // Stop scanning
+  const handleStopScan = () => {
     setIsScanning(false);
-    setData("Memproses gambar...");
-
-    // clear camera scanner jika aktif
-    if (scannerRef.current) {
-      try {
-        await scannerRef.current.clear();
-      } catch (e) {
-        console.warn("Error menghentikan scanner saat upload:", e);
-      } finally {
-        scannerRef.current = null;
-        setIsScannerInitialized(false);
-      }
-    }
-
-    // gunakan Html5Qrcode untuk scan dari file
-    const html5QrCode = new Html5Qrcode(QR_SCANNER_ID);
-
-    try {
-      const decodedText = await html5QrCode.scanFile(
-        file,
-        /* showImage= */ false
-      );
-      setData("✅ QR Ditemukan dari gambar: " + decodedText);
-      await recordAndRedirect(decodedText);
-    } catch (err) {
-      console.error("Gagal memindai gambar:", err);
-      setData("Gagal memindai gambar QR. Coba lagi.");
-      setIsImageProcessing(false);
-      scannerRef.current = null;
-      setTimeout(() => setIsScannerInitialized(false), 300);
-    } finally {
-      // kosongkan input agar file yang sama bisa diunggah lagi
-      event.target.value = "";
-      try {
-        await html5QrCode.clear();
-      } catch {
-        // ignore
-      }
-    }
-  };
-
-  const getStatusClassesModified = () => {
-    if (error) return "bg-red-600 text-white shadow-lg shadow-red-500/50"; // Error tetap merah
-    if (
-      isImageProcessing ||
-      (!isScanning && !error && data.includes("Pencatatan Berhasil"))
-    )
-      return "bg-green-600 text-white shadow-lg shadow-green-500/50"; // Sukses tetap hijau, atau Anda bisa ganti ke gold-ish juga
-    return "bg-amber-400 text-gray-800 shadow-lg shadow-amber-400/50"; // Status default kuning muda
+    setData("Scanner dihentikan. Tekan tombol untuk mulai lagi.");
   };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-amber-50 text-gray-800 p-4">
-      {" "}
-      {/* Mengubah text-white menjadi text-gray-800 untuk kontras */}
       <h1 className="text-3xl font-extrabold mb-8 text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-amber-600">
-        {" "}
-        {/* Gradient kuning-orange */}
         Registrasi Visitor
       </h1>
+
+      {/* Scanner Container */}
       <div
         style={{ width: "100%", maxWidth: "450px" }}
-        className="rounded-xl shadow-2xl overflow-hidden bg-white p-2 transform transition-all duration-500 border border-amber-200"
+        className="rounded-xl shadow-2xl overflow-hidden bg-white p-4 transform transition-all duration-500 border border-amber-200"
       >
-        {/* Scanner container - tampil saat isScanning true */}
-        <div
-          id={QR_SCANNER_ID}
-          style={{
-            display: isScanning && !isImageProcessing ? 'block' : 'none',
-          }}
-        >
-          {/* Scanner akan di-inject ke div ini */}
-        </div>
-
-        {/* Placeholder utama saat kamera nonaktif atau memproses */}
-        {(!isScanning || isImageProcessing) && (
-          <div
-            className={`p-12 text-center flex flex-col items-center justify-center min-h-[300px] transition-all duration-300 ${
-              isImageProcessing
-                ? "bg-amber-100 text-amber-800"
-                : "bg-white text-gray-500"
-            }`}
-          >
-            {isImageProcessing ? (
+        {isScanning ? (
+          <div className="relative">
+            <QrScanner
+              onDecode={handleScan}
+              onError={handleError}
+              constraints={{
+                facingMode: 'environment'
+              }}
+              containerStyle={{
+                width: '100%',
+                paddingTop: '100%',
+                position: 'relative'
+              }}
+              videoStyle={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                borderRadius: '8px'
+              }}
+            />
+          </div>
+        ) : (
+          <div className={`p-12 text-center flex flex-col items-center justify-center min-h-[300px] transition-all duration-300 ${
+            isProcessing ? "bg-amber-100 text-amber-800" : "bg-white text-gray-500"
+          }`}>
+            {isProcessing ? (
               <>
                 <Loader />
                 <p className="mt-4 font-semibold text-lg">{data}</p>
@@ -366,21 +192,16 @@ export default function QRScannerPage() {
           </div>
         )}
       </div>
-      {/* Bagian Tombol Aksi */}
+
+      {/* Action Buttons */}
       <div className="mt-8 w-full max-w-sm space-y-3">
-        {/* Peringatan jika izin ditolak */}
-        {permissionDenied && (
+        {/* Error Message */}
+        {error && (
           <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 mb-4">
-            <h3 className="font-bold text-red-800 mb-2">⚠️ Izin Kamera Diperlukan</h3>
+            <h3 className="font-bold text-red-800 mb-2">⚠️ {error}</h3>
             <p className="text-sm text-red-700 mb-3">
-              Aplikasi membutuhkan izin kamera untuk memindai QR Code. Silakan:
+              Silakan izinkan akses kamera di pengaturan browser dan muat ulang halaman.
             </p>
-            <ol className="text-sm text-red-700 space-y-2 list-decimal list-inside mb-3">
-              <li>Klik ikon kunci/info di address bar browser</li>
-              <li>Pilih "Pengaturan Situs" atau "Izin"</li>
-              <li>Ubah izin kamera menjadi "Izinkan"</li>
-              <li>Muat ulang halaman ini</li>
-            </ol>
             <button
               onClick={() => window.location.reload()}
               className="w-full bg-red-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-red-700 transition"
@@ -390,8 +211,8 @@ export default function QRScannerPage() {
           </div>
         )}
 
-        {/* Tombol Mulai Pindai */}
-        {!isScanning && !isImageProcessing && (
+        {/* Start/Stop Scanner Button */}
+        {!isScanning && !isProcessing && (
           <button
             onClick={handleStartScan}
             className="flex items-center justify-center w-full bg-amber-500 text-white p-4 rounded-full font-bold uppercase tracking-wider shadow-xl shadow-amber-500/50 hover:bg-amber-600 transition duration-300 transform hover:scale-[1.02]"
@@ -400,8 +221,7 @@ export default function QRScannerPage() {
           </button>
         )}
 
-        {/* Tombol Stop Scanner */}
-        {isScanning && !isImageProcessing && (
+        {isScanning && !isProcessing && (
           <button
             onClick={handleStopScan}
             className="flex items-center justify-center w-full bg-red-500 text-white p-4 rounded-full font-bold uppercase tracking-wider shadow-xl shadow-red-500/50 hover:bg-red-600 transition duration-300 transform hover:scale-[1.02]"
@@ -409,44 +229,16 @@ export default function QRScannerPage() {
             ⏹ Stop Scanner
           </button>
         )}
-
-        {/* Tombol Unggah File QR Code */}
-        <label
-          htmlFor="qr-upload"
-          className={`flex items-center justify-center w-full p-3 rounded-full font-semibold cursor-pointer transition duration-300 
-        ${
-          isImageProcessing
-            ? "bg-gray-300 text-gray-600 cursor-not-allowed" // Warna abu-abu untuk disabled
-            : "bg-amber-500 text-white shadow-lg shadow-yellow-600/50 hover:bg-yellow-700" // Warna kuning/gold
-        }`}
-        >
-          {isImageProcessing ? (
-            <>
-              <Loader /> Sedang Memproses...
-            </>
-          ) : (
-            <>
-              <UploadIcon /> Unggah File QR Code
-            </>
-          )}
-        </label>
-        <input
-          id="qr-upload"
-          type="file"
-          accept="image/*"
-          onChange={handleImageUpload}
-          disabled={isImageProcessing}
-          className="hidden"
-        />
       </div>
-      {/* Status Bar Dinamis */}
-      <div
-        className={`mt-6 p-3 rounded-xl w-full max-w-lg text-center font-bold transition-all duration-500 ${getStatusClassesModified()}`}
-      >
+
+      {/* Status Bar */}
+      <div className={`mt-6 p-3 rounded-xl w-full max-w-lg text-center font-bold transition-all duration-500 ${
+        error ? "bg-red-600 text-white shadow-lg shadow-red-500/50" :
+        isProcessing ? "bg-green-600 text-white shadow-lg shadow-green-500/50" :
+        "bg-amber-400 text-gray-800 shadow-lg shadow-amber-400/50"
+      }`}>
         {data}
       </div>
-      {error && <p className="text-red-600 mt-4 text-sm">Error: {error}</p>}{" "}
-      {/* Error tetap merah agar jelas */}
     </div>
   );
 }
