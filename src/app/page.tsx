@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 
 // SVG Icon Components
 const QrCode = (props: React.SVGProps<SVGSVGElement>) => (
@@ -48,8 +49,15 @@ export default function Home() {
       <div className="max-w-4xl w-full z-10 text-center p-4">
         <div className="inline-flex items-center text-xs font-medium text-amber-800 
                         rounded-full mb-8 backdrop-blur-sm">
-          <div className="w-16 h-16 bg-orange-200 rounded-full flex items-center justify-center shadow-lg">
-            <span className="text-xl font-extrabold text-orange-800">GP</span>
+          <div className="w-16 h-16 bg-orange-200 rounded-full flex items-center justify-center shadow-lg relative overflow-hidden">
+            <Image
+              src="/logo.png"
+              alt="Growpath Logo"
+              width={48}
+              height={48}
+              className="object-contain"
+              priority
+            />
           </div>
         </div>
 
