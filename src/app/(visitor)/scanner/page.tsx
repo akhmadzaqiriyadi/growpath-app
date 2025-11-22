@@ -152,28 +152,30 @@ export default function QRScannerPage() {
         className="rounded-xl shadow-2xl overflow-hidden bg-white p-4 transform transition-all duration-500 border border-amber-200"
       >
         {isScanning ? (
-          <div className="relative">
+          <div className="relative w-full aspect-square bg-black rounded-lg overflow-hidden">
             <Scanner
               onScan={handleScan}
               onError={handleError}
               constraints={{
-                facingMode: 'environment'
+                facingMode: 'environment',
+                aspectRatio: 1
+              }}
+              components={{
+                audio: false,
+                finder: true
               }}
               styles={{
                 container: {
                   width: '100%',
-                  paddingTop: '100%',
+                  height: '100%',
                   position: 'relative'
                 },
                 video: {
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
                   width: '100%',
                   height: '100%',
-                  objectFit: 'cover',
-                  borderRadius: '8px'
-                }
+                  objectFit: 'cover'
+                },
+                finderBorder: 50
               }}
             />
           </div>
