@@ -1,3 +1,5 @@
+import ActivityFeed from "./ActivityFeed";
+
 export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-white to-yellow-50/30 p-6">
@@ -5,6 +7,7 @@ export default function Dashboard() {
         Admin Dashboard
       </h1>
       <p className="text-gray-600">Dashboard content coming soon...</p>
+      <ActivityFeed/>
     </div>
   );
 }

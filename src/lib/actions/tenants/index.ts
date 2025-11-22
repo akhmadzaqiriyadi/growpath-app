@@ -1,384 +1,205 @@
 'use server';
 
-import { createClient, createAdminClient } from '@/lib/supabase/server';
-import {
-  createTenantSchema,
-  updateTenantSchema,
-  type CreateTenantInput,
-  type UpdateTenantInput,
-} from '@/lib/validations/tenant';
+import { createAdminClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 
-type ActionResult<T = null> = {
-  success: boolean;
-  message: string;
-  data?: T;
-  error?: string;
-};
+// ==========================================
+// 1. FUNGSI FETCHING (DATA & STATS) - BARU
+// ==========================================
 
-/**
- * Get all tenants (admin only)
- */
-export async function getTenants(): Promise<ActionResult<any[]>> {
-  try {
-    const supabase = await createClient();
+// Ambil Daftar Tenant (Paginated & Search)
+export async function getTenantsList({
+  page = 1,
+  limit = 10,
+  query = '',
+}: {
+  page?: number;
+  limit?: number;
+  query?: string;
+}) {
+  const supabase = await createAdminClient();
 
-    // Check if user is admin
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return { success: false, message: 'Unauthorized' };
-    }
+  const { data, error } = await supabase.rpc('get_tenants_paginated', {
+    p_search: query,
+    p_page: page,
+    p_limit: limit,
+  });
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    if (profile?.role !== 'admin') {
-      return { success: false, message: 'Only admin can access this' };
-    }
-
-    // Get all tenants
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('role', 'tenant')
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching tenants:', error);
-      return { success: false, message: 'Failed to fetch tenants', error: error.message };
-    }
-
-    return {
-      success: true,
-      message: 'Tenants fetched successfully',
-      data: data || [],
-    };
-  } catch (error) {
-    console.error('Unexpected error:', error);
-    return { success: false, message: 'An unexpected error occurred' };
+  if (error) {
+    console.error('Error fetching tenants:', error);
+    return { data: [], count: 0, error: error.message };
   }
+
+  return {
+    data: data.data,
+    count: data.count,
+    error: null,
+  };
 }
 
-/**
- * Create single tenant (admin only)
- */
-export async function createTenant(input: CreateTenantInput): Promise<ActionResult<any>> {
+// Ambil Statistik Dashboard Tenant
+export async function getTenantStats() {
+  const supabase = await createAdminClient();
+
+  const { data, error } = await supabase.rpc('get_tenant_dashboard_stats');
+
+  if (error) {
+    console.error('Error fetching tenant stats:', error);
+    return {
+      totalTenants: 0,
+      activeToday: 0,
+      pendingSetup: 0,
+    };
+  }
+
+  return data;
+}
+
+// ==========================================
+// 2. FUNGSI MUTASI (CREATE, UPDATE, DELETE) - DIKEMBALIKAN
+// ==========================================
+
+// Create Single Tenant
+// Update fungsi createTenant ini:
+export async function createTenant(formData: any) {
+  const supabase = await createAdminClient();
+
   try {
-    const supabase = await createClient();
+    // 1. PISAHKAN DATA: Ambil password & email untuk Auth, sisanya untuk Profile
+    const { password, email, ...profileData } = formData;
 
-    // Check if user is admin
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return { success: false, message: 'Unauthorized' };
+    // 2. VALIDASI: Pastikan password ada (karena wajib untuk login)
+    if (!password) {
+      return { success: false, message: 'Password wajib diisi untuk akun baru' };
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    if (profile?.role !== 'admin') {
-      return { success: false, message: 'Only admin can create tenants' };
-    }
-
-    // Validate input
-    const validatedData = createTenantSchema.parse(input);
-
-    // Check if email or NPM already exists
-    const { data: existingUser } = await supabase
-      .from('profiles')
-      .select('email, npm')
-      .or(`email.eq.${validatedData.email},npm.eq.${validatedData.npm}`)
-      .single();
-
-    if (existingUser) {
-      return {
-        success: false,
-        message: existingUser.email === validatedData.email 
-          ? 'Email sudah digunakan' 
-          : 'NPM sudah terdaftar',
-      };
-    }
-
-    // Create admin client for auth operations
-    const adminClient = await createAdminClient();
-    
-    // Create auth user with service role
-    const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
-      email: validatedData.email,
-      password: validatedData.password,
-      email_confirm: true, // Auto-confirm email
+    // 3. STEP 1: Buat User di Supabase Auth (Sistem Login)
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email: email,
+      password: password,
+      email_confirm: true, // Auto-confirm agar tenant tidak perlu klik link email dulu
+      user_metadata: { full_name: profileData.full_name }
     });
 
-    if (authError || !authData.user) {
-      console.error('Auth error:', authError);
-      return {
-        success: false,
-        message: 'Failed to create user account',
-        error: authError?.message,
-      };
+    if (authError) {
+      console.error('Auth Error:', authError);
+      // Handle jika email sudah terdaftar
+      if (authError.message.includes('already been registered')) {
+        return { success: false, message: 'Email ini sudah terdaftar sebagai pengguna lain.' };
+      }
+      throw authError;
     }
 
-    // Create profile
-    const { data: profileData, error: profileError } = await supabase
-      .from('profiles')
-      .insert({
-        id: authData.user.id,
+    if (!authData.user) {
+      throw new Error('Gagal membuat user auth');
+    }
+
+    // 4. STEP 2: Masukkan Data Profil ke Tabel 'profiles'
+    // Kita gunakan ID dari Auth User agar sinkron
+    const { error: profileError } = await supabase.from('profiles').insert([
+      {
+        id: authData.user.id, // PENTING: Kunci penghubung (Foreign Key)
+        email: email,         // Simpan email juga di profile untuk kemudahan search
+        ...profileData,       // (NPM, Nama Lengkap, Prodi, dll)
         role: 'tenant',
-        full_name: validatedData.full_name,
-        email: validatedData.email,
-        phone: validatedData.phone || null,
-        npm: validatedData.npm,
-        prodi: validatedData.prodi,
-        tenant_name: validatedData.tenant_name,
-        business_category: validatedData.business_category,
-      })
-      .select()
-      .single();
+        created_at: new Date().toISOString(),
+      },
+    ]);
 
     if (profileError) {
-      console.error('Profile error:', profileError);
-      // Rollback: delete auth user using admin client
-      await adminClient.auth.admin.deleteUser(authData.user.id);
-      return {
-        success: false,
-        message: 'Failed to create profile',
-        error: profileError.message,
-      };
+      // Jika gagal buat profile, kita harus hapus user auth yang baru dibuat 
+      // supaya tidak jadi data sampah (opsional tapi disarankan)
+      await supabase.auth.admin.deleteUser(authData.user.id);
+      throw profileError;
     }
 
-    revalidatePath('/admin/tenants');
+    // 5. Refresh halaman
+    revalidatePath('/tenants');
+    
+    return { success: true, message: 'Tenant dan akun login berhasil dibuat' };
 
-    return {
-      success: true,
-      message: 'Tenant berhasil dibuat',
-      data: profileData,
-    };
   } catch (error: any) {
-    console.error('Unexpected error:', error);
-    return {
-      success: false,
-      message: error?.message || 'An unexpected error occurred',
-    };
+    console.error('Create tenant error:', error);
+    return { success: false, message: error.message || 'Terjadi kesalahan sistem' };
   }
 }
 
-/**
- * Bulk create tenants (admin only)
- */
-export async function bulkCreateTenants(
-  tenants: CreateTenantInput[]
-): Promise<ActionResult<{ success: number; failed: number; errors: string[] }>> {
+// Update Tenant
+export async function updateTenant(id: string, data: any) {
+  const supabase = await createAdminClient();
+
   try {
-    const supabase = await createClient();
-
-    // Check if user is admin
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return { success: false, message: 'Unauthorized' };
-    }
-
-    const { data: profile } = await supabase
+    const { error } = await supabase
       .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
+      .update(data)
+      .eq('id', id);
 
-    if (profile?.role !== 'admin') {
-      return { success: false, message: 'Only admin can bulk create tenants' };
-    }
+    if (error) throw error;
 
-    let successCount = 0;
-    let failedCount = 0;
-    const errors: string[] = [];
-
-    // Process each tenant
-    for (const tenant of tenants) {
-      try {
-        const result = await createTenant(tenant);
-        if (result.success) {
-          successCount++;
-        } else {
-          failedCount++;
-          errors.push(`${tenant.email}: ${result.message}`);
-        }
-      } catch (error: any) {
-        failedCount++;
-        errors.push(`${tenant.email}: ${error.message}`);
-      }
-    }
-
-    revalidatePath('/admin/tenants');
-
-    return {
-      success: true,
-      message: `Bulk create completed: ${successCount} success, ${failedCount} failed`,
-      data: { success: successCount, failed: failedCount, errors },
-    };
+    revalidatePath('/tenants');
+    
+    return { success: true, message: 'Data tenant berhasil diperbarui' };
   } catch (error: any) {
-    console.error('Unexpected error:', error);
-    return {
-      success: false,
-      message: error?.message || 'An unexpected error occurred',
-    };
+    console.error('Update tenant error:', error);
+    return { success: false, message: error.message };
   }
 }
 
-/**
- * Update tenant (admin only)
- */
-export async function updateTenant(
-  tenantId: string,
-  input: UpdateTenantInput
-): Promise<ActionResult<any>> {
+// Delete Tenant
+export async function deleteTenant(id: string) {
+  const supabase = await createAdminClient();
+
   try {
-    const supabase = await createClient();
-
-    // Check if user is admin
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return { success: false, message: 'Unauthorized' };
-    }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    if (profile?.role !== 'admin') {
-      return { success: false, message: 'Only admin can update tenants' };
-    }
-
-    // Validate input
-    const validatedData = updateTenantSchema.parse(input);
-
-    // Check if email or NPM already exists (excluding current tenant)
-    const { data: existingUser } = await supabase
-      .from('profiles')
-      .select('id, email, npm')
-      .or(`email.eq.${validatedData.email},npm.eq.${validatedData.npm}`)
-      .neq('id', tenantId)
-      .single();
-
-    if (existingUser) {
-      return {
-        success: false,
-        message: existingUser.email === validatedData.email 
-          ? 'Email sudah digunakan' 
-          : 'NPM sudah terdaftar',
-      };
-    }
-
-    // Update profile
-    const { data: profileData, error: profileError } = await supabase
-      .from('profiles')
-      .update({
-        full_name: validatedData.full_name,
-        email: validatedData.email,
-        phone: validatedData.phone || null,
-        npm: validatedData.npm,
-        prodi: validatedData.prodi,
-        tenant_name: validatedData.tenant_name,
-        business_category: validatedData.business_category,
-      })
-      .eq('id', tenantId)
-      .select()
-      .single();
-
-    if (profileError) {
-      console.error('Profile update error:', profileError);
-      return {
-        success: false,
-        message: 'Failed to update profile',
-        error: profileError.message,
-      };
-    }
-
-    // Update password if provided
-    if (validatedData.password) {
-      const adminClient = await createAdminClient();
-      const { error: passwordError } = await adminClient.auth.admin.updateUserById(
-        tenantId,
-        { password: validatedData.password }
-      );
-
-      if (passwordError) {
-        console.error('Password update error:', passwordError);
-        // Don't fail the whole update if password fails
-      }
-    }
-
-    revalidatePath('/admin/tenants');
-
-    return {
-      success: true,
-      message: 'Tenant berhasil diupdate',
-      data: profileData,
-    };
-  } catch (error: any) {
-    console.error('Unexpected error:', error);
-    return {
-      success: false,
-      message: error?.message || 'An unexpected error occurred',
-    };
-  }
-}
-
-/**
- * Delete tenant (soft delete - admin only)
- */
-export async function deleteTenant(tenantId: string): Promise<ActionResult> {
-  try {
-    const supabase = await createClient();
-
-    // Check if user is admin
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return { success: false, message: 'Unauthorized' };
-    }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
-
-    if (profile?.role !== 'admin') {
-      return { success: false, message: 'Only admin can delete tenants' };
-    }
-
-    // Soft delete (set deleted_at)
+    // Soft delete (mengisi deleted_at) atau Hard delete tergantung kebijakan Anda.
+    // Disini saya contohkan Soft Delete sesuai pola kode sebelumnya.
     const { error } = await supabase
       .from('profiles')
       .update({ deleted_at: new Date().toISOString() })
-      .eq('id', tenantId);
+      .eq('id', id);
 
-    if (error) {
-      console.error('Delete error:', error);
-      return {
-        success: false,
-        message: 'Failed to delete tenant',
-        error: error.message,
-      };
-    }
+    if (error) throw error;
 
-    revalidatePath('/admin/tenants');
-
-    return {
-      success: true,
-      message: 'Tenant berhasil dihapus',
-    };
+    revalidatePath('/tenants');
+    
+    return { success: true, message: 'Tenant berhasil dihapus' };
   } catch (error: any) {
-    console.error('Unexpected error:', error);
-    return {
-      success: false,
-      message: error?.message || 'An unexpected error occurred',
-    };
+    console.error('Delete tenant error:', error);
+    return { success: false, message: error.message };
   }
+}
+
+// Bulk Create Tenants
+export async function bulkCreateTenants(tenantsData: any[]) {
+  const supabase = await createAdminClient();
+
+  try {
+    // Siapkan data dengan role tenant
+    const formattedData = tenantsData.map((t) => ({
+      ...t,
+      role: 'tenant',
+      created_at: new Date().toISOString(),
+    }));
+
+    const { error } = await supabase.from('profiles').insert(formattedData);
+
+    if (error) throw error;
+
+    revalidatePath('/tenants');
+
+    return { success: true, message: `${tenantsData.length} tenant berhasil diimport` };
+  } catch (error: any) {
+    console.error('Bulk create error:', error);
+    return { success: false, message: error.message };
+  }
+}
+
+// Fungsi wrapper lama (jika ada komponen yang masih memanggil getTenants biasa)
+// Kita arahkan ke getTenantsList agar backward compatible
+export async function getTenants() {
+  const result = await getTenantsList({ page: 1, limit: 100 }); // Default ambil 100
+  return {
+    success: !result.error,
+    data: result.data,
+    message: result.error,
+  };
 }
