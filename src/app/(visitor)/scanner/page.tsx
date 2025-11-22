@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { QrScanner } from '@yudiel/react-qr-scanner';
+import { Scanner } from '@yudiel/react-qr-scanner';
 
 // --- HELPER ICONS ---
 // Anda dapat mengganti ini dengan library ikon seperti lucide-react atau react-icons
@@ -153,25 +153,27 @@ export default function QRScannerPage() {
       >
         {isScanning ? (
           <div className="relative">
-            <QrScanner
-              onDecode={handleScan}
+            <Scanner
+              onScan={handleScan}
               onError={handleError}
               constraints={{
                 facingMode: 'environment'
               }}
-              containerStyle={{
-                width: '100%',
-                paddingTop: '100%',
-                position: 'relative'
-              }}
-              videoStyle={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                borderRadius: '8px'
+              styles={{
+                container: {
+                  width: '100%',
+                  paddingTop: '100%',
+                  position: 'relative'
+                },
+                video: {
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  borderRadius: '8px'
+                }
               }}
             />
           </div>
