@@ -173,8 +173,7 @@ export default function QRScannerPage() {
                   width: '100%',
                   height: '100%',
                   objectFit: 'cover'
-                },
-                finderBorder: 50
+                }
               }}
             />
           </div>
