@@ -168,25 +168,84 @@ export async function deleteTenant(id: string) {
   }
 }
 
-// Bulk Create Tenants
+// Bulk Create Tenants with Auth Users
 export async function bulkCreateTenants(tenantsData: any[]) {
   const supabase = await createAdminClient();
 
   try {
-    // Siapkan data dengan role tenant
-    const formattedData = tenantsData.map((t) => ({
-      ...t,
-      role: 'tenant',
-      created_at: new Date().toISOString(),
-    }));
+    const results = {
+      success: 0,
+      failed: 0,
+      errors: [] as string[],
+    };
 
-    const { error } = await supabase.from('profiles').insert(formattedData);
+    // Process each tenant one by one
+    for (let i = 0; i < tenantsData.length; i++) {
+      const tenant = tenantsData[i];
+      
+      try {
+        // 1. Extract password and email for Auth
+        const { password, email, ...profileData } = tenant;
+        
+        // Use default password if not provided
+        const authPassword = password || 'password123';
 
-    if (error) throw error;
+        // 2. Create Auth User with metadata flag
+        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+          email: email,
+          password: authPassword,
+          email_confirm: true, // Auto-confirm email
+          user_metadata: { 
+            full_name: profileData.full_name,
+            must_reset_password: true // FLAG: User must reset password on first login
+          }
+        });
+
+        if (authError) {
+          results.failed++;
+          results.errors.push(`${email}: ${authError.message}`);
+          continue;
+        }
+
+        if (!authData.user) {
+          results.failed++;
+          results.errors.push(`${email}: Failed to create auth user`);
+          continue;
+        }
+
+        // 3. Create Profile in database
+        const { error: profileError } = await supabase.from('profiles').insert([
+          {
+            id: authData.user.id,
+            email: email,
+            ...profileData,
+            role: 'tenant',
+            created_at: new Date().toISOString(),
+          },
+        ]);
+
+        if (profileError) {
+          // Rollback: Delete auth user if profile creation fails
+          await supabase.auth.admin.deleteUser(authData.user.id);
+          results.failed++;
+          results.errors.push(`${email}: ${profileError.message}`);
+          continue;
+        }
+
+        results.success++;
+      } catch (error: any) {
+        results.failed++;
+        results.errors.push(`${tenant.email}: ${error.message}`);
+      }
+    }
 
     revalidatePath('/tenants');
 
-    return { success: true, message: `${tenantsData.length} tenant berhasil diimport` };
+    return { 
+      success: true, 
+      message: `Bulk create completed: ${results.success} success, ${results.failed} failed`,
+      data: results
+    };
   } catch (error: any) {
     console.error('Bulk create error:', error);
     return { success: false, message: error.message };
