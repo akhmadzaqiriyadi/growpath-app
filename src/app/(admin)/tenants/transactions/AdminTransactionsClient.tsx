@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useDebounce } from 'use-debounce'; // 1. Import library debounce
 import {
   getAllTransactions,
   getTenantsList,
   getTransactionsStats,
-} from '@/lib/actions/transactions'; // Pastikan path ini benar
+} from '@/lib/actions/transactions';
 import { Database } from '@/types/database.types';
 import {
   ArrowUpRight,
@@ -42,18 +43,24 @@ export function AdminTransactionsClient() {
   // --- State Data & Loading ---
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [loading, setLoading] = useState(true); // Untuk loading tabel transaksi
-  const [loadingTenants, setLoadingTenants] = useState(true); // Untuk loading dropdown tenant
+  const [loading, setLoading] = useState(true);
+  const [loadingTenants, setLoadingTenants] = useState(true);
   const [loadingStats, setLoadingStats] = useState(true);
 
   // --- State Paginasi ---
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10); // Kamu bisa sesuaikan ini
-  const [totalItemsCount, setTotalItemsCount] = useState(0); // Total data dari server
+  const [itemsPerPage] = useState(10);
+  const [totalItemsCount, setTotalItemsCount] = useState(0);
 
-  // --- State Filters ---
-  const [searchTenantQuery, setSearchTenantQuery] = useState(''); // Pencarian Tenant
-  const [searchNoteQuery, setSearchNoteQuery] = useState(''); // Pencarian Catatan
+  // --- State Filters (Input User) ---
+  const [searchTenantQuery, setSearchTenantQuery] = useState('');
+  const [searchNoteQuery, setSearchNoteQuery] = useState('');
+  
+  // --- 2. DEBOUNCE VALUE (Nilai yang ditunda) ---
+  // API hanya akan dipanggil ketika nilai ini berubah (setelah user berhenti mengetik 500ms)
+  const [debouncedTenantQuery] = useDebounce(searchTenantQuery, 500);
+  const [debouncedNoteQuery] = useDebounce(searchNoteQuery, 500);
+
   const [selectedTenant, setSelectedTenant] = useState<string>('all');
   const [selectedType, setSelectedType] = useState<
     'all' | 'PEMASUKAN' | 'PENGELUARAN'
@@ -61,7 +68,7 @@ export function AdminTransactionsClient() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
-  // --- State Stats (Diisi dari server) ---
+  // --- State Stats ---
   const [stats, setStats] = useState({
     totalTransactions: 0,
     totalIncome: 0,
@@ -69,7 +76,7 @@ export function AdminTransactionsClient() {
     activeTenants: 0,
   });
 
-  // --- EFEK 1: Ambil data tenant (hanya sekali saat komponen dimuat) ---
+  // --- EFEK 1: Ambil data tenant (sekali saja) ---
   useEffect(() => {
     const loadTenants = async () => {
       setLoadingTenants(true);
@@ -80,16 +87,17 @@ export function AdminTransactionsClient() {
       setLoadingTenants(false);
     };
     loadTenants();
-  }, []); // <-- Dependency array kosong, hanya jalan sekali
+  }, []);
 
-  // --- EFEK 2: Ambil DATA STATS (setiap kali FILTER berubah) ---
+  // --- EFEK 2: Ambil DATA STATS ---
   useEffect(() => {
     const loadStats = async () => {
       setLoadingStats(true);
 
       const filterParams = {
-        searchTenantQuery: searchTenantQuery,
-        searchNoteQuery: searchNoteQuery,
+        // 3. Gunakan nilai DEBOUNCED disini, bukan nilai input langsung
+        searchTenantQuery: debouncedTenantQuery,
+        searchNoteQuery: debouncedNoteQuery,
         selectedTenant: selectedTenant,
         selectedType: selectedType,
         dateFrom: dateFrom,
@@ -103,15 +111,16 @@ export function AdminTransactionsClient() {
 
     loadStats();
   }, [
-    searchTenantQuery,
-    searchNoteQuery,
+    // 4. Ubah dependency array ke nilai DEBOUNCED
+    debouncedTenantQuery,
+    debouncedNoteQuery,
     selectedTenant,
     selectedType,
     dateFrom,
     dateTo,
-  ]); // <-- HANYA bergantung pada filter
+  ]);
 
-  // --- EFEK 3: Ambil DATA TABEL (setiap kali FILTER atau HALAMAN berubah) ---
+  // --- EFEK 3: Ambil DATA TABEL ---
   useEffect(() => {
     const loadTransactions = async () => {
       setLoading(true);
@@ -119,8 +128,9 @@ export function AdminTransactionsClient() {
       const params = {
         page: currentPage,
         itemsPerPage: itemsPerPage,
-        searchTenantQuery: searchTenantQuery,
-        searchNoteQuery: searchNoteQuery,
+        // 5. Gunakan nilai DEBOUNCED disini juga
+        searchTenantQuery: debouncedTenantQuery,
+        searchNoteQuery: debouncedNoteQuery,
         selectedTenant: selectedTenant,
         selectedType: selectedType,
         dateFrom: dateFrom,
@@ -144,27 +154,28 @@ export function AdminTransactionsClient() {
   }, [
     currentPage,
     itemsPerPage,
-    searchTenantQuery,
-    searchNoteQuery,
+    // 6. Ubah dependency array ke nilai DEBOUNCED
+    debouncedTenantQuery,
+    debouncedNoteQuery,
     selectedTenant,
     selectedType,
     dateFrom,
     dateTo,
-  ]); // <-- Bergantung pada filter DAN halaman
+  ]);
 
-  // --- EFEK 4: Reset halaman ke 1 jika filter berubah ---
+  // --- EFEK 4: Reset halaman ke 1 ---
   useEffect(() => {
     setCurrentPage(1);
   }, [
-    searchTenantQuery,
-    searchNoteQuery,
+    // 7. Reset halaman juga menunggu debounce agar tidak lompat-lompat
+    debouncedTenantQuery,
+    debouncedNoteQuery,
     selectedTenant,
     selectedType,
     dateFrom,
     dateTo,
-  ]); // <-- Hanya state filter
+  ]);
 
-  // --- (Fungsi helper format tidak berubah) ---
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
@@ -181,20 +192,18 @@ export function AdminTransactionsClient() {
     });
   };
 
-  // --- Fungsi clearFilters (DIPERBARUI) ---
   const clearFilters = () => {
-    setSearchTenantQuery('');
-    setSearchNoteQuery('');
+    setSearchTenantQuery(''); // Reset input UI
+    setSearchNoteQuery('');   // Reset input UI
+    // (useDebounce akan otomatis mereset debounced value setelah 500ms)
     setSelectedTenant('all');
     setSelectedType('all');
     setDateFrom('');
     setDateTo('');
   };
 
-  // --- HITUNG PAGINASI ---
   const totalPages = Math.ceil(totalItemsCount / itemsPerPage);
 
-  // Handler paginasi (tidak berubah)
   const handleNextPage = () => {
     setCurrentPage((prev) => Math.min(prev + 1, totalPages));
   };
@@ -202,8 +211,6 @@ export function AdminTransactionsClient() {
   const handlePrevPage = () => {
     setCurrentPage((prev) => Math.max(prev - 1, 1));
   };
-
-  // --- RENDER ---
 
   if (loadingTenants) {
     return (
@@ -232,7 +239,7 @@ export function AdminTransactionsClient() {
         </p>
       </div>
 
-      {/* Stats Cards (Akurat) */}
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {/* Card Total Transaksi */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
@@ -316,19 +323,19 @@ export function AdminTransactionsClient() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {/* 1. Search Tenant */}
+          {/* 1. Search Tenant (DEBOUNCED) */}
           <div className="relative md:col-span-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
               type="text"
               placeholder="Cari tenant..."
+              // 8. Value tetap menggunakan state langsung (agar UI responsif saat ngetik)
               value={searchTenantQuery}
               onChange={(e) => setSearchTenantQuery(e.target.value)}
               className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
 
-          {/* 2. Search Catatan */}
           
 
           {/* 3. Tenant Filter (Dropdown) */}
@@ -402,6 +409,19 @@ export function AdminTransactionsClient() {
         )}
       </div>
 
+      {/* 2. Search Catatan (DEBOUNCED) */}
+           <div className="relative md:col-span-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Cari di catatan..."
+              // 9. Value tetap menggunakan state langsung
+              value={searchNoteQuery}
+              onChange={(e) => setSearchNoteQuery(e.target.value)}
+              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
       {/* Results Count */}
       <div className="flex justify-between items-center">
         <p className="text-sm text-gray-600">
@@ -409,17 +429,6 @@ export function AdminTransactionsClient() {
           dari <span className="font-semibold">{totalItemsCount}</span> transaksi
         </p>
       </div>
-
-      <div className="relative md:col-span-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Cari di catatan..."
-              value={searchNoteQuery}
-              onChange={(e) => setSearchNoteQuery(e.target.value)}
-              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
 
       {/* Transactions Table */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">

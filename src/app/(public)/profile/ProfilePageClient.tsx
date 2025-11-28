@@ -14,7 +14,8 @@ import {
   TrendingUp,
   ArrowUpRight,
   ArrowDownRight,
-  Package
+  Package,
+  Info
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -156,7 +157,7 @@ export function ProfilePageClient() {
       {/* Business Info */}
       <div className="bg-white rounded-lg border border-gray-200 p-4">
         <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          <Store className="h-5 w-5 text-primary" />
+          <Info className="h-5 w-5 text-primary" />
           Informasi Usaha
         </h2>
         
