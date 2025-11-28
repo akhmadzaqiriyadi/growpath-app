@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 export default async function ChangePasswordPage({
   searchParams,
 }: {
-  searchParams: { required?: string; error?: string };
+  searchParams: Promise<{ required?: string; error?: string }>;
 }) {
   // Check if user is authenticated
   const supabase = await createClient();
@@ -15,8 +15,10 @@ export default async function ChangePasswordPage({
     redirect('/login');
   }
 
-  const isRequired = searchParams.required === 'true';
-  const error = searchParams.error;
+  // Await searchParams (Next.js 15 requirement)
+  const params = await searchParams;
+  const isRequired = params.required === 'true';
+  const error = params.error;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
