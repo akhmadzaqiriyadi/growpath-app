@@ -17,14 +17,15 @@ import {
   Calendar,
   X 
 } from 'lucide-react';
+import { toast } from "sonner"
 
 type Product = Database['public']['Tables']['products']['Row'];
 
 const transactionItemSchema = z.object({
   product_id: z.number(),
   product_name: z.string(),
-  quantity: z.number().min(1, 'Quantity minimal 1'),
-  unit_price: z.number().min(0),
+  quantity: z.number().min(1, 'Quantity minimal 1').max(9999, 'quantity maksimal 9999'),
+  unit_price: z.number().min(1, 'harga harus positif & tidak boleh nol'),
 });
 
 const transactionSchema = z.object({
@@ -92,7 +93,7 @@ export function NewTransactionClient() {
 
     if (error) {
       console.error('Error loading products:', error);
-      alert('Gagal memuat produk');
+      toast.error('Gagal memuat produk');
     } else {
       setProducts(data || []);
     }
@@ -104,7 +105,7 @@ export function NewTransactionClient() {
     // Check if product already in items
     const exists = watchItems?.some(item => item.product_id === product.id);
     if (exists) {
-      alert('Produk sudah ditambahkan');
+      toast.error('Produk sudah ditambahkan');
       return;
     }
 
@@ -132,7 +133,7 @@ export function NewTransactionClient() {
     if (file) {
       // Check file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
-        alert('Ukuran file maksimal 5MB');
+        toast.error('Ukuran file maksimal 5MB');
         return;
       }
       setReceiptFile(file);
@@ -168,7 +169,7 @@ export function NewTransactionClient() {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (!user) {
-        alert('Silakan login terlebih dahulu');
+        toast.error('Silakan login terlebih dahulu');
         router.push('/login');
         return;
       }
@@ -204,7 +205,7 @@ export function NewTransactionClient() {
 
       if (transactionError) {
         console.error('Transaction error:', transactionError);
-        alert('Gagal menyimpan transaksi: ' + transactionError.message);
+        toast.error('Gagal menyimpan transaksi: ' + transactionError.message);
         return;
       }
 
@@ -224,15 +225,15 @@ export function NewTransactionClient() {
 
       if (itemsError) {
         console.error('Items error:', itemsError);
-        alert('Gagal menyimpan detail transaksi');
+        toast.error('Gagal menyimpan detail transaksi');
         return;
       }
 
-      alert('✅ Transaksi berhasil dicatat!');
+      toast.error('✅ Transaksi berhasil dicatat!');
       router.push('/transactions');
     } catch (error: any) {
       console.error('Unexpected error:', error);
-      alert('Terjadi kesalahan: ' + error.message);
+      toast.error('Terjadi kesalahan: ' + error.message);
     } finally {
       setIsSubmitting(false);
     }
