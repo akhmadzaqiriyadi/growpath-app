@@ -190,14 +190,13 @@ export async function bulkCreateTenants(tenantsData: any[]) {
         // Use default password if not provided
         const authPassword = password || 'password123';
 
-        // 2. Create Auth User with metadata flag
+        // 2. Create Auth User
         const { data: authData, error: authError } = await supabase.auth.admin.createUser({
           email: email,
           password: authPassword,
           email_confirm: true, // Auto-confirm email
           user_metadata: { 
-            full_name: profileData.full_name,
-            must_reset_password: true // FLAG: User must reset password on first login
+            full_name: profileData.full_name
           }
         });
 

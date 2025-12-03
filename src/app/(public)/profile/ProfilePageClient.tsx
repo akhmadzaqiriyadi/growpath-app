@@ -15,9 +15,14 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Package,
-  Info
+  Info,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { updatePassword } from '@/app/auth/actions';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 
@@ -32,6 +37,15 @@ export function ProfilePageClient() {
   });
   const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
+  
+  // Password change state
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     loadProfileData();
@@ -100,6 +114,29 @@ export function ProfilePageClient() {
     
     await supabase.auth.signOut();
     router.push('/login');
+  };
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordLoading(true);
+    setPasswordMessage(null);
+
+    const formData = new FormData();
+    formData.append('newPassword', newPassword);
+    formData.append('confirmPassword', confirmPassword);
+
+    const result = await updatePassword(formData);
+    
+    if (result.success) {
+      setPasswordMessage({ type: 'success', text: result.message });
+      setNewPassword('');
+      setConfirmPassword('');
+      setShowPasswordForm(false);
+    } else {
+      setPasswordMessage({ type: 'error', text: result.message });
+    }
+    
+    setPasswordLoading(false);
   };
 
   const formatCurrency = (amount: number) => {
@@ -282,6 +319,120 @@ export function ProfilePageClient() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Change Password Section */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+            <KeyRound className="h-5 w-5 text-primary" />
+            Ubah Password
+          </h2>
+          {!showPasswordForm && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowPasswordForm(true)}
+            >
+              Ubah
+            </Button>
+          )}
+        </div>
+
+        {passwordMessage && (
+          <div className={`mb-4 p-3 rounded-lg text-sm ${
+            passwordMessage.type === 'success' 
+              ? 'bg-green-50 text-green-700 border border-green-200' 
+              : 'bg-red-50 text-red-700 border border-red-200'
+          }`}>
+            {passwordMessage.text}
+          </div>
+        )}
+
+        {showPasswordForm && (
+          <form onSubmit={handlePasswordChange} className="space-y-4">
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Password Baru</label>
+              <div className="relative">
+                <input
+                  type={showNewPassword ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent pr-10"
+                  placeholder="Minimal 8 karakter"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+                >
+                  {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Konfirmasi Password</label>
+              <div className="relative">
+                <input
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent pr-10"
+                  placeholder="Ulangi password baru"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShowPasswordForm(false);
+                  setNewPassword('');
+                  setConfirmPassword('');
+                  setPasswordMessage(null);
+                }}
+                disabled={passwordLoading}
+              >
+                Batal
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={passwordLoading || newPassword.length < 8}
+              >
+                {passwordLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Menyimpan...
+                  </>
+                ) : (
+                  'Simpan Password'
+                )}
+              </Button>
+            </div>
+          </form>
+        )}
+
+        {!showPasswordForm && (
+          <p className="text-xs text-gray-500">
+            Untuk keamanan akun, disarankan mengubah password secara berkala.
+          </p>
+        )}
       </div>
 
       {/* Logout Button */}

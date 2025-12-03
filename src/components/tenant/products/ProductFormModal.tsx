@@ -13,11 +13,16 @@ import { toast } from "sonner"
 type Product = Database['public']['Tables']['products']['Row'];
 
 const productSchema = z.object({
-  name: z.string().min(2, 'Nama produk minimal 2 karakter'),
-  description: z.string().optional(),
-  price: z.number().min(1, 'Harga harus positif & Harga tidak boleh nol'),
-  stock: z.number().min(0, 'Stock harus positif').max(9999, 'Stok tidak boleh melebihi 9999'),
-  category: z.string().optional(),
+  name: z.string().min(2, 'Nama produk minimal 2 karakter').max(100, 'Nama produk maksimal 100 karakter'),
+  description: z.string().max(500, 'Deskripsi maksimal 500 karakter').optional(),
+  price: z.number()
+    .min(100, 'Harga minimal Rp 100')
+    .max(100000000, 'Harga maksimal Rp 100.000.000'),
+  stock: z.number()
+    .int('Stok harus bilangan bulat')
+    .min(0, 'Stok tidak boleh negatif')
+    .max(10000, 'Stok maksimal 10.000 unit'),
+  category: z.string().max(50, 'Kategori maksimal 50 karakter').optional(),
   is_active: z.boolean(),
 });
 
@@ -195,8 +200,10 @@ export function ProductFormModal({
                 {...register('price', { valueAsNumber: true })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="15000"
-                min="0"
+                min="100"
+                max="100000000"
               />
+              <p className="text-xs text-gray-400 mt-1">Min: Rp 100 - Max: Rp 100.000.000</p>
               {errors.price && (
                 <p className="text-red-500 text-xs mt-1">{errors.price.message}</p>
               )}
@@ -204,7 +211,7 @@ export function ProductFormModal({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Stock <span className="text-red-500">*</span>
+                Stok <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
@@ -212,7 +219,10 @@ export function ProductFormModal({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="50"
                 min="0"
+                max="10000"
+                step="1"
               />
+              <p className="text-xs text-gray-400 mt-1">Maksimal 10.000 unit</p>
               {errors.stock && (
                 <p className="text-red-500 text-xs mt-1">{errors.stock.message}</p>
               )}
