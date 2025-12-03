@@ -8,14 +8,15 @@ import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
 import { Database } from '@/types/database.types';
+import { toast } from "sonner"
 
 type Product = Database['public']['Tables']['products']['Row'];
 
 const productSchema = z.object({
   name: z.string().min(2, 'Nama produk minimal 2 karakter'),
   description: z.string().optional(),
-  price: z.number().min(0, 'Harga harus positif'),
-  stock: z.number().min(0, 'Stock harus positif'),
+  price: z.number().min(1, 'Harga harus positif & Harga tidak boleh nol'),
+  stock: z.number().min(0, 'Stock harus positif').max(9999, 'Stok tidak boleh melebihi 9999'),
   category: z.string().optional(),
   is_active: z.boolean(),
 });
@@ -82,7 +83,7 @@ export function ProductFormModal({
       const { data: { user } } = await supabase.auth.getUser();
 
       if (!user) {
-        alert('Silakan login terlebih dahulu');
+        toast.error('Silakan login terlebih dahulu');
         return;
       }
 
@@ -101,12 +102,12 @@ export function ProductFormModal({
           .eq('id', product.id);
 
         if (error) {
-          alert('Gagal mengupdate produk');
+          toast.error('Gagal mengupdate produk');
           console.error(error);
           return;
         }
 
-        alert('Produk berhasil diupdate!');
+        toast.error('Produk berhasil diupdate!');
       } else {
         // Create
         const { error } = await supabase.from('products').insert({
@@ -120,12 +121,12 @@ export function ProductFormModal({
         });
 
         if (error) {
-          alert('Gagal menambah produk');
+          toast.error('Gagal menambah produk');
           console.error(error);
           return;
         }
 
-        alert('Produk berhasil ditambahkan!');
+        toast.error('Produk berhasil ditambahkan!');
       }
 
       onSuccess();
@@ -133,7 +134,7 @@ export function ProductFormModal({
       reset();
     } catch (error) {
       console.error(error);
-      alert('Terjadi kesalahan');
+      toast.error('Terjadi kesalahan');
     } finally {
       setIsSubmitting(false);
     }
