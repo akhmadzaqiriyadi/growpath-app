@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Home, Package, FileText, User } from 'lucide-react';
+import { Home, Package, FileText, User, QrCode } from 'lucide-react';
 
 interface TenantMobileLayoutProps {
   children: React.ReactNode;

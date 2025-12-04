@@ -1,39 +1,62 @@
 // src/app/api/record-visitor/route.js
-import { createClient } from "../../../lib/supabase/client.ts";
+import { createClient } from "@/lib/supabase/client";
+import { headers } from 'next/headers';
 
-// Fungsi ini akan menangani permintaan POST dari halaman scanner
+/**
+ * POST /api/record-visitor
+ * Body: { tenant_id: "uuid" } (optional)
+ * Records a visitor entry with metadata
+ */
 export async function POST(req) {
-  // Karena kita menggunakan App Router, kita tidak menggunakan res.status(200).json
-  // tetapi menggunakan objek Response dari Next.js/Web Standard API
   const supabase = createClient();
 
   try {
-    // Mencatat kunjungan di tabel 'visitors'
+    const body = await req.json();
+    const { tenant_id } = body;
+
+    // Get request metadata
+    const headersList = await headers();
+    const userAgent = headersList.get('user-agent') || 'Unknown';
+    const referer = headersList.get('referer') || '';
+    const ip = headersList.get('x-forwarded-for') || headersList.get('x-real-ip') || 'Unknown';
+
+    // Build metadata
+    const metadata = {
+      userAgent,
+      referer,
+      ip: ip.split(',')[0].trim(), // first IP if multiple
+      recordedAt: new Date().toISOString(),
+    };
+
+    // Insert visitor record
     const { error } = await supabase.from("visitors").insert([
-      {},
+      {
+        tenant_id: tenant_id || null,
+        metadata,
+      },
     ]);
 
     if (error) {
       console.error("Supabase Error:", error.message);
-      // Log error, tapi tetap berikan response sukses ke client agar client redirect.
       return Response.json(
-        { message: "Kunjungan dicatat dengan error Supabase" },
-        { status: 200 }
+        { success: false, message: "Gagal mencatat kunjungan", error: error.message },
+        { status: 500 }
       );
     }
 
-    // Jika berhasil, kirim respons 200 OK
     return Response.json(
-      { message: "Kunjungan berhasil dicatat" },
-      { status: 200 }
+      { success: true, message: "Kunjungan berhasil dicatat" },
+      { status: 201 }
     );
   } catch (error) {
-    console.error("General Server Error:", error.message);
-    return Response.json({ message: "Internal Server Error" }, { status: 500 });
+    console.error("General Server Error:", error);
+    return Response.json(
+      { success: false, message: "Internal Server Error" },
+      { status: 500 }
+    );
   }
 }
 
-// Tambahkan handler untuk method lain (misalnya GET) agar tidak ada error 405
-export async function GET(req) {
-  return Response.json({ message: "Method Not Allowed" }, { status: 405 });
+export async function GET() {
+  return Response.json({ message: "Method Not Allowed. Use POST." }, { status: 405 });
 }
