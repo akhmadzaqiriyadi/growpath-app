@@ -27,6 +27,7 @@ const navItems = [
   { href: "/tenants/transactions", icon: CreditCard, label: "Transactions" },
   { href: "/analytics", icon: BarChart3, label: "Analytics" },
   { href: "/visitors", icon: QrCode, label: "Visitors" },
+  { href: "/qr-generator", icon: QrCode, label: "QR Generator" },
   { href: "/settings", icon: Settings, label: "Settings" },
 ];
 
